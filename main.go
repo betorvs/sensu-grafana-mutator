@@ -133,6 +133,12 @@ func executeMutator(event *types.Event) (*types.Event, error) {
 				}
 			}
 		}
+		if event.Check.Annotations != nil {
+			for k, v := range event.Check.Annotations {
+				annotations[k] = v
+			}
+		}
+
 		event.Check.Annotations = annotations
 	}
 	return event, nil
