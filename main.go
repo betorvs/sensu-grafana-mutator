@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"log"
 	"net/url"
 	"strings"
 
@@ -96,7 +95,7 @@ func checkArgs(_ *types.Event) error {
 }
 
 func executeMutator(event *types.Event) (*types.Event, error) {
-	log.Println("executing mutator with --grafana-url", mutatorConfig.GrafanaURL)
+	// log.Println("executing mutator with --grafana-url", mutatorConfig.GrafanaURL)
 	if mutatorConfig.GrafanaLokiExplorerPipeline != "" {
 		annotations := make(map[string]string)
 		fromDate := event.Timestamp * 1000
