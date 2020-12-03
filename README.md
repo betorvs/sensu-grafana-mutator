@@ -23,7 +23,7 @@ The sensu-grafana-mutator is a [Sensu Mutator][1] that parse a label as grafana 
 
 ```bash
 
-Sensu grafana mutator add grafana_url annotation
+Sensu grafana mutator add grafana_*_url annotations
 
 Usage:
   sensu-grafana-mutator [flags]
@@ -35,6 +35,7 @@ Available Commands:
 
 Flags:
   -A, --alertmanager-integration-label string           Allow integration from sensu-alertmanager-events plugin (default "sensu-alertmanager-events")
+  -D, --grafana-dashboard-suggested string              Suggested Dashboard based on Labels. e. [{"grafana_annotation":"kubernetes_namespace","dashboard_url":"https://grafana.example.com/d/85a562078cdf77779eaa1add43ccec1e/kubernetes-compute-resources-namespace-pods?orgId=1&var-datasource=thanos","labels":["namespace"]}]
   -d, --grafana-loki-datasource string                  An Grafana Loki Datasource name. e. -d loki  (default "loki")
   -p, --grafana-loki-explorer-pipeline string           From Sensu Events, choose one label to be parse here. e. {app=eventrouter} |= k8s_id then use -p k8s_id
   -r, --grafana-loki-explorer-range int                 Time range in seconds to create grafana explorer URL (default 300)
@@ -69,6 +70,23 @@ Then sensu-grafana-mutator should be:
 
 
 It will try to find the label in event.check.Label with name `sensu-alertmanager-events` and value `owner` then it will create a grafana loki URL using only namespace in stream. Example: `{namespace="Value"}`. Only change `--alertmanager-integration-label` if the [sensu-alertmanager-events][6] plugin changed it.
+
+#### grafana-dashboard-suggested
+
+You can include multiples grafana_annotations inside this flag. But we don't have a benchmark about it. Then keep it simple and it will work as expected. We used one example dashboard from [kubernete-mixin][7] called kubernetes-compute-resources-namespace-pods. 
+
+```json
+[
+  {
+    "grafana_annotation": "kubernetes_namespace",
+    "dashboard_url": "https://grafana-beta.k8s.infra.ppro.com/d/85a562078cdf77779eaa1add43ccec1e/kubernetes-compute-resources-namespace-pods?orgId=1&var-datasource=thanos",
+    "labels": [
+      "namespace",
+      "cluster"
+    ]
+  }
+]
+```
 
 ### Asset registration
 
@@ -121,3 +139,4 @@ For more information about contributing to this plugin, see [Contributing][1].
 [4]: https://github.com/betorvs/sensu-kubernetes-events
 [5]: https://grafana.com/docs/loki/latest
 [6]: https://github.com/betorvs/sensu-alertmanager-events
+[7]: https://github.com/kubernetes-monitoring/kubernetes-mixin

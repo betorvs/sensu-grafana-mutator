@@ -1,6 +1,7 @@
 package main
 
 import (
+	"net/url"
 	"testing"
 
 	v2 "github.com/sensu/sensu-go/api/core/v2"
@@ -44,4 +45,24 @@ func TestReplaceSpecial(t *testing.T) {
 	assert.NotContains(t, result1, "}")
 	assert.NotContains(t, result1, "\"")
 	assert.Equal(t, result1, expected1)
+}
+
+func TestCheckMissingOrgID(t *testing.T) {
+	grafanaURL1, _ := url.Parse("https://grafana.com/?orgId=1")
+	value1 := checkMissingOrgID(grafanaURL1.Query())
+	assert.True(t, value1)
+	grafanaURL2, _ := url.Parse("https://grafana.com/?orgid=1")
+	value2 := checkMissingOrgID(grafanaURL2.Query())
+	assert.False(t, value2)
+}
+
+func TestExtractLabels(t *testing.T) {
+	event1 := v2.FixtureEvent("entity1", "check1")
+	event1.Labels["test1"] = "value1"
+	value1, result1 := extractLabels(event1, "test1")
+	assert.Contains(t, value1, "value1")
+	assert.True(t, result1)
+	event2 := v2.FixtureEvent("entity2", "check2")
+	_, result2 := extractLabels(event2, "test2")
+	assert.False(t, result2)
 }

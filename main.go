@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"strings"
@@ -8,6 +9,13 @@ import (
 	"github.com/sensu-community/sensu-plugin-sdk/sensu"
 	"github.com/sensu/sensu-go/types"
 )
+
+// DashboardSuggested struct
+type DashboardSuggested struct {
+	GrafanaAnnotation string   `json:"grafana_annotation"`
+	DashboardURL      string   `json:"dashboard_url"`
+	Labels            []string `json:"labels"`
+}
 
 // Config represents the mutator plugin config.
 type Config struct {
@@ -19,6 +27,7 @@ type Config struct {
 	GrafanaLokiExplorerPipeline        string
 	GrafanaLokiExplorerStreamNamespace string
 	AlertmanagerIntegrationLabel       string
+	GrafanaDashboardSuggested          string
 	GrafanaLokiExplorerRange           int
 	TimeRange                          int64
 }
@@ -27,7 +36,7 @@ var (
 	mutatorConfig = Config{
 		PluginConfig: sensu.PluginConfig{
 			Name:     "sensu-grafana-mutator",
-			Short:    "Sensu grafana mutator add grafana_url annotation",
+			Short:    "Sensu grafana mutator add grafana_*_url annotations",
 			Keyspace: "sensu.io/plugins/sensu-grafana-mutator/config",
 		},
 	}
@@ -105,6 +114,15 @@ var (
 			Usage:     "Allow integration from sensu-alertmanager-events plugin",
 			Value:     &mutatorConfig.AlertmanagerIntegrationLabel,
 		},
+		{
+			Path:      "grafana-dashboard-suggested",
+			Env:       "",
+			Argument:  "grafana-dashboard-suggested",
+			Shorthand: "D",
+			Default:   "",
+			Usage:     "Suggested Dashboard based on Labels. e. [{\"grafana_annotation\":\"kubernetes_namespace\",\"dashboard_url\":\"https://grafana.example.com/d/85a562078cdf77779eaa1add43ccec1e/kubernetes-compute-resources-namespace-pods?orgId=1&var-datasource=thanos\",\"labels\":[\"namespace\"]}]",
+			Value:     &mutatorConfig.GrafanaDashboardSuggested,
+		},
 	}
 )
 
@@ -130,39 +148,9 @@ func executeMutator(event *types.Event) (*types.Event, error) {
 		annotations := make(map[string]string)
 		fromDate := event.Timestamp * 1000
 		toDate := event.Timestamp*1000 + mutatorConfig.TimeRange
-		explorerPipeline := ""
-		namespaceStream := ""
-		if event.Labels != nil {
-			for k, v := range event.Labels {
-				if k == mutatorConfig.GrafanaLokiExplorerPipeline {
-					explorerPipeline = v
-				}
-				if k == mutatorConfig.GrafanaLokiExplorerStreamNamespace {
-					namespaceStream = v
-				}
-			}
-		}
-		if event.Entity.Labels != nil {
-			for k, v := range event.Entity.Labels {
-				if k == mutatorConfig.GrafanaLokiExplorerPipeline {
-					explorerPipeline = v
-				}
-				if k == mutatorConfig.GrafanaLokiExplorerStreamNamespace {
-					namespaceStream = v
-				}
-			}
-		}
-		if event.Check.Labels != nil {
-			for k, v := range event.Check.Labels {
-				if k == mutatorConfig.GrafanaLokiExplorerPipeline {
-					explorerPipeline = v
-				}
-				if k == mutatorConfig.GrafanaLokiExplorerStreamNamespace {
-					namespaceStream = v
-				}
-			}
-		}
-		if explorerPipeline != "" {
+		explorerPipeline, explorerValid := extractLabels(event, mutatorConfig.GrafanaLokiExplorerPipeline)
+		namespaceStream, _ := extractLabels(event, mutatorConfig.GrafanaLokiExplorerStreamNamespace)
+		if explorerValid {
 			label := mutatorConfig.GrafanaLokiExplorerStreamLabel
 			app := mutatorConfig.GrafanaLokiExplorerStreamSelector
 			grafanaURL, err := generateGrafanaURL(label, app, explorerPipeline, namespaceStream, fromDate, toDate)
@@ -179,6 +167,36 @@ func executeMutator(event *types.Event) (*types.Event, error) {
 				return event, err
 			}
 			annotations["grafana_loki_url"] = grafanaURL
+		}
+		if mutatorConfig.GrafanaDashboardSuggested != "" {
+			dashboardSuggested := []DashboardSuggested{}
+			err := json.Unmarshal([]byte(mutatorConfig.GrafanaDashboardSuggested), &dashboardSuggested)
+			if err != nil {
+				return event, err
+			}
+			for _, v := range dashboardSuggested {
+				output := fmt.Sprintf("grafana_%s_url", strings.ToLower(v.GrafanaAnnotation))
+				grafanaURL, err := url.Parse(v.DashboardURL)
+				if err != nil {
+					return event, err
+				}
+				if !checkMissingOrgID(grafanaURL.Query()) {
+					return event, fmt.Errorf("Missing orgId in grafana URL in --grafana-dashboard-suggested. e. https://grafana.com/?orgId=1")
+				}
+				timeRange := fmt.Sprintf("&from=%d&to=%d", fromDate, toDate)
+				finalURI := ""
+				validFinalURI := false
+				for _, s := range v.Labels {
+					// &var-namespace=girogate
+					value := ""
+					value, validFinalURI = extractLabels(event, s)
+					finalURI += fmt.Sprintf("&var-%s=%s", s, value)
+				}
+				if validFinalURI {
+					annotations[output] = fmt.Sprintf("%s%s%s", grafanaURL, timeRange, finalURI)
+				}
+			}
+
 		}
 		if event.Check.Annotations != nil {
 			for k, v := range event.Check.Annotations {
@@ -249,4 +267,33 @@ func checkMissingOrgID(u url.Values) bool {
 		}
 	}
 	return false
+}
+
+func extractLabels(event *types.Event, label string) (string, bool) {
+	labelFound := ""
+	if event.Labels != nil {
+		for k, v := range event.Labels {
+			if k == label {
+				labelFound = v
+			}
+		}
+	}
+	if event.Entity.Labels != nil {
+		for k, v := range event.Entity.Labels {
+			if k == label {
+				labelFound = v
+			}
+		}
+	}
+	if event.Check.Labels != nil {
+		for k, v := range event.Check.Labels {
+			if k == label {
+				labelFound = v
+			}
+		}
+	}
+	if labelFound == "" {
+		return labelFound, false
+	}
+	return labelFound, true
 }
