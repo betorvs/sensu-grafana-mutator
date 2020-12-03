@@ -12,12 +12,15 @@ import (
 // Config represents the mutator plugin config.
 type Config struct {
 	sensu.PluginConfig
-	GrafanaURL                        string
-	GrafanaLokiExplorerStreamLabel    string
-	GrafanaLokiExplorerStreamSelector string
-	GrafanaLokiExplorerPipeline       string
-	GrafanaLokiExplorerRange          int
-	TimeRange                         int64
+	GrafanaURL                         string
+	GrafanaLokiDatasource              string
+	GrafanaLokiExplorerStreamLabel     string
+	GrafanaLokiExplorerStreamSelector  string
+	GrafanaLokiExplorerPipeline        string
+	GrafanaLokiExplorerStreamNamespace string
+	AlertmanagerIntegrationLabel       string
+	GrafanaLokiExplorerRange           int
+	TimeRange                          int64
 }
 
 var (
@@ -38,6 +41,15 @@ var (
 			Default:   "",
 			Usage:     "An grafana complete URL. e. https://grafana.com/?orgId=1 ",
 			Value:     &mutatorConfig.GrafanaURL,
+		},
+		{
+			Path:      "grafana-loki-datasource",
+			Env:       "GRAFANA_LOKI_DATASOURCE",
+			Argument:  "grafana-loki-datasource",
+			Shorthand: "d",
+			Default:   "loki",
+			Usage:     "An Grafana Loki Datasource name. e. -d loki ",
+			Value:     &mutatorConfig.GrafanaLokiDatasource,
 		},
 		{
 			Path:      "grafana-loki-explorer-stream-label",
@@ -75,6 +87,24 @@ var (
 			Usage:     "Time range in seconds to create grafana explorer URL",
 			Value:     &mutatorConfig.GrafanaLokiExplorerRange,
 		},
+		{
+			Path:      "grafana-loki-explorer-stream-namespace",
+			Env:       "GRAFANA_LOKI_EXPLORER_STREAM_NAMESPACE",
+			Argument:  "grafana-loki-explorer-stream-namespace",
+			Shorthand: "n",
+			Default:   "",
+			Usage:     "From Grafana Loki streams use namespace. e. {namespace=ValueFromEvent} then '-n NamespaceLabelName' ",
+			Value:     &mutatorConfig.GrafanaLokiExplorerStreamNamespace,
+		},
+		{
+			Path:      "alertmanager-integration-label",
+			Env:       "ALERTMANAGER_INTEGRATION_LABEL",
+			Argument:  "alertmanager-integration-label",
+			Shorthand: "A",
+			Default:   "sensu-alertmanager-events",
+			Usage:     "Allow integration from sensu-alertmanager-events plugin",
+			Value:     &mutatorConfig.AlertmanagerIntegrationLabel,
+		},
 	}
 )
 
@@ -100,52 +130,68 @@ func executeMutator(event *types.Event) (*types.Event, error) {
 		annotations := make(map[string]string)
 		fromDate := event.Timestamp * 1000
 		toDate := event.Timestamp*1000 + mutatorConfig.TimeRange
+		explorerPipeline := ""
+		namespaceStream := ""
 		if event.Labels != nil {
 			for k, v := range event.Labels {
 				if k == mutatorConfig.GrafanaLokiExplorerPipeline {
-					grafanaURL, err := generateGrafanaURL(v, fromDate, toDate)
-					if err != nil {
-						return event, err
-					}
-					annotations["grafana_loki_url"] = grafanaURL
+					explorerPipeline = v
+				}
+				if k == mutatorConfig.GrafanaLokiExplorerStreamNamespace {
+					namespaceStream = v
 				}
 			}
 		}
 		if event.Entity.Labels != nil {
 			for k, v := range event.Entity.Labels {
 				if k == mutatorConfig.GrafanaLokiExplorerPipeline {
-					grafanaURL, err := generateGrafanaURL(v, fromDate, toDate)
-					if err != nil {
-						return event, err
-					}
-					annotations["grafana_loki_url"] = grafanaURL
+					explorerPipeline = v
+				}
+				if k == mutatorConfig.GrafanaLokiExplorerStreamNamespace {
+					namespaceStream = v
 				}
 			}
 		}
 		if event.Check.Labels != nil {
 			for k, v := range event.Check.Labels {
 				if k == mutatorConfig.GrafanaLokiExplorerPipeline {
-					grafanaURL, err := generateGrafanaURL(v, fromDate, toDate)
-					if err != nil {
-						return event, err
-					}
-					annotations["grafana_loki_url"] = grafanaURL
+					explorerPipeline = v
+				}
+				if k == mutatorConfig.GrafanaLokiExplorerStreamNamespace {
+					namespaceStream = v
 				}
 			}
+		}
+		if explorerPipeline != "" {
+			label := mutatorConfig.GrafanaLokiExplorerStreamLabel
+			app := mutatorConfig.GrafanaLokiExplorerStreamSelector
+			grafanaURL, err := generateGrafanaURL(label, app, explorerPipeline, namespaceStream, fromDate, toDate)
+			if err != nil {
+				return event, err
+			}
+			annotations["grafana_loki_url"] = grafanaURL
+		}
+		if event.Check.Labels[mutatorConfig.AlertmanagerIntegrationLabel] == "owner" {
+			label := "namespace"
+			app := event.Check.Labels["namespace"]
+			grafanaURL, err := generateGrafanaURL(label, app, "", "", fromDate, toDate)
+			if err != nil {
+				return event, err
+			}
+			annotations["grafana_loki_url"] = grafanaURL
 		}
 		if event.Check.Annotations != nil {
 			for k, v := range event.Check.Annotations {
 				annotations[k] = v
 			}
 		}
-
 		event.Check.Annotations = annotations
 	}
 	return event, nil
 }
 
-func generateGrafanaURL(v string, fromDate, toDate int64) (string, error) {
-	grafanaURL, err := grafanaExplorerURLEncoded(mutatorConfig.GrafanaLokiExplorerStreamLabel, mutatorConfig.GrafanaLokiExplorerStreamSelector, v, mutatorConfig.GrafanaURL, fromDate, toDate)
+func generateGrafanaURL(l, a, v, n string, fromDate, toDate int64) (string, error) {
+	grafanaURL, err := grafanaExplorerURLEncoded(l, a, v, mutatorConfig.GrafanaURL, n, mutatorConfig.GrafanaLokiDatasource, fromDate, toDate)
 	if err != nil {
 		return "", fmt.Errorf("Cannot generate grafana loki explorer URL")
 	}
@@ -172,7 +218,7 @@ func replaceSpecial(s string) string {
 	return value
 }
 
-func grafanaExplorerURLEncoded(label, app, value, grafana string, fromDate, toDate int64) (string, error) {
+func grafanaExplorerURLEncoded(label, app, value, grafana, namespace, datasource string, fromDate, toDate int64) (string, error) {
 	// grafana URL expected: https://grafana.com/?orgId=1
 	grafanaURL, err := url.Parse(grafana)
 	if err != nil {
@@ -185,7 +231,13 @@ func grafanaExplorerURLEncoded(label, app, value, grafana string, fromDate, toDa
 	grafanaURL.Path = "explore"
 	grafanaExplorerURL := fmt.Sprintf("%s&left=", grafanaURL)
 	searchText := url.QueryEscape(fmt.Sprintf("{%s=\\\"%s\\\"}|=\\\"%s\\\"", label, app, value))
-	grafanaExplorerURI := fmt.Sprintf("[\"%d\",\"%d\",\"loki\",{\"expr\":\"%s\"}]", fromDate, toDate, searchText)
+	if namespace != "" {
+		searchText = url.QueryEscape(fmt.Sprintf("{%s=\\\"%s\\\",namespace=\\\"%s\\\"}|=\\\"%s\\\"", label, app, namespace, value))
+	}
+	if value == "" && namespace == "" {
+		searchText = url.QueryEscape(fmt.Sprintf("{%s=\\\"%s\\\"}", label, app))
+	}
+	grafanaExplorerURI := fmt.Sprintf("[\"%d\",\"%d\",\"%s\",{\"expr\":\"%s\"}]", fromDate, toDate, datasource, searchText)
 	result := fmt.Sprintf("%s%s", grafanaExplorerURL, replaceSpecial(grafanaExplorerURI))
 	return result, nil
 }

@@ -21,11 +21,17 @@ func TestCheckArgs(t *testing.T) {
 
 func TestGrafanaExplorerURLEncoded(t *testing.T) {
 	test1 := "https://grafana.com/?orgId=1"
-	_, err1 := grafanaExplorerURLEncoded("app", "eventrouter", "test", test1, 1606487400000, 1606487700000)
+	expected1 := "%22%7Bapp%3D%5C%22eventrouter%5C%22%7D%7C%3D%5C%22test"
+	result1, err1 := grafanaExplorerURLEncoded("app", "eventrouter", "test", test1, "", "loki", 1606487400000, 1606487700000)
 	assert.NoError(t, err1)
+	assert.Contains(t, result1, expected1)
 	test2 := "https://grafana.com/"
-	_, err2 := grafanaExplorerURLEncoded("app", "eventrouter", "test", test2, 1606487400000, 1606487700000)
+	_, err2 := grafanaExplorerURLEncoded("app", "eventrouter", "test", test2, "", "loki", 1606487400000, 1606487700000)
 	assert.Error(t, err2)
+	namespace := "spacename"
+	result3, err3 := grafanaExplorerURLEncoded("app", "eventrouter", "test", test1, namespace, "loki", 1606487400000, 1606487700000)
+	assert.NoError(t, err3)
+	assert.Contains(t, result3, namespace)
 }
 
 func TestReplaceSpecial(t *testing.T) {

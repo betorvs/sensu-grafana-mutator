@@ -34,12 +34,15 @@ Available Commands:
   version     Print the version number of this plugin
 
 Flags:
-  -p, --grafana-loki-explorer-pipeline string          From Sensu Events, choose one label to be parse here. e. {app=eventrouter} |= k8s_id then use -p k8s_id
-  -r, --grafana-loki-explorer-range int                Time range in seconds to create grafana explorer URL (default 300)
-  -l, --grafana-loki-explorer-stream-label string      From Grafana Loki streams use label. e. {app=eventrouter} then '-l app'  (default "app")
-  -s, --grafana-loki-explorer-stream-selector string   From Grafana Loki streams use label. e. {app=eventrouter} then '-s eventrouter'  (default "eventrouter")
-  -g, --grafana-url string                             An grafana complete URL. e. https://grafana.com/?orgId=1 
-  -h, --help                                           help for sensu-grafana-mutator
+  -A, --alertmanager-integration-label string           Allow integration from sensu-alertmanager-events plugin (default "sensu-alertmanager-events")
+  -d, --grafana-loki-datasource string                  An Grafana Loki Datasource name. e. -d loki  (default "loki")
+  -p, --grafana-loki-explorer-pipeline string           From Sensu Events, choose one label to be parse here. e. {app=eventrouter} |= k8s_id then use -p k8s_id
+  -r, --grafana-loki-explorer-range int                 Time range in seconds to create grafana explorer URL (default 300)
+  -l, --grafana-loki-explorer-stream-label string       From Grafana Loki streams use label. e. {app=eventrouter} then '-l app'  (default "app")
+  -n, --grafana-loki-explorer-stream-namespace string   From Grafana Loki streams use namespace. e. {namespace=ValueFromEvent} then '-n NamespaceLabelName' 
+  -s, --grafana-loki-explorer-stream-selector string    From Grafana Loki streams use label. e. {app=eventrouter} then '-s eventrouter'  (default "eventrouter")
+  -g, --grafana-url string                              An grafana complete URL. e. https://grafana.com/?orgId=1 
+  -h, --help                                            help for sensu-grafana-mutator
 
 Use "sensu-grafana-mutator [command] --help" for more information about a command.
 
@@ -61,6 +64,11 @@ Then sensu-grafana-mutator should be:
 ```
 ./sensu-grafana-mutator -g https://grafana.example.com/?orgId=1 -p io.kubernetes.event.id
 ```
+
+#### sensu-alertmanager-events
+
+
+It will try to find the label in event.check.Label with name `sensu-alertmanager-events` and value `owner` then it will create a grafana loki URL using only namespace in stream. Example: `{namespace="Value"}`. Only change `--alertmanager-integration-label` if the [sensu-alertmanager-events][6] plugin changed it.
 
 ### Asset registration
 
@@ -112,3 +120,4 @@ For more information about contributing to this plugin, see [Contributing][1].
 [3]: https://github.com/heptiolabs/eventrouter
 [4]: https://github.com/betorvs/sensu-kubernetes-events
 [5]: https://grafana.com/docs/loki/latest
+[6]: https://github.com/betorvs/sensu-alertmanager-events
