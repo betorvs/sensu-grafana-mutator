@@ -186,13 +186,17 @@ func executeMutator(event *types.Event) (*types.Event, error) {
 				timeRange := fmt.Sprintf("&from=%d&to=%d", fromDate, toDate)
 				finalURI := ""
 				validFinalURI := false
+				count := 0
 				for _, s := range v.Labels {
-					// &var-namespace=girogate
+					// &var-namespace=test
 					value := ""
 					value, validFinalURI = extractLabels(event, s)
-					finalURI += fmt.Sprintf("&var-%s=%s", s, value)
+					if validFinalURI {
+						finalURI += fmt.Sprintf("&var-%s=%s", s, value)
+						count++
+					}
 				}
-				if validFinalURI {
+				if validFinalURI && len(v.Labels) == count {
 					annotations[output] = fmt.Sprintf("%s%s%s", grafanaURL, timeRange, finalURI)
 				}
 			}
