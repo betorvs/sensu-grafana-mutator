@@ -149,10 +149,11 @@ func executeMutator(event *types.Event) (*types.Event, error) {
 		fromDate := event.Timestamp * 1000
 		toDate := event.Timestamp*1000 + mutatorConfig.TimeRange
 		explorerPipeline, explorerValid := extractLabels(event, mutatorConfig.GrafanaLokiExplorerPipeline)
-		namespaceStream, _ := extractLabels(event, mutatorConfig.GrafanaLokiExplorerStreamNamespace)
-		if explorerValid {
+		namespaceStream, namespaceValid := extractLabels(event, mutatorConfig.GrafanaLokiExplorerStreamNamespace)
+		if explorerValid && namespaceValid {
 			label := mutatorConfig.GrafanaLokiExplorerStreamLabel
 			app := mutatorConfig.GrafanaLokiExplorerStreamSelector
+			// fmt.Println(explorerPipeline, namespaceStream)
 			grafanaURL, err := generateGrafanaURL(label, app, explorerPipeline, namespaceStream, fromDate, toDate)
 			if err != nil {
 				return event, err
@@ -161,12 +162,35 @@ func executeMutator(event *types.Event) (*types.Event, error) {
 		}
 		if event.Check.Labels[mutatorConfig.AlertmanagerIntegrationLabel] == "owner" {
 			label := "namespace"
-			app := event.Check.Labels["namespace"]
-			grafanaURL, err := generateGrafanaURL(label, app, "", "", fromDate, toDate)
-			if err != nil {
-				return event, err
+			app, nameValid := extractLabels(event, "namespace")
+			if nameValid {
+				grafanaURL, err := generateGrafanaURL(label, app, "", "", fromDate, toDate)
+				if err != nil {
+					return event, err
+				}
+				annotations["grafana_loki_url"] = grafanaURL
 			}
-			annotations["grafana_loki_url"] = grafanaURL
+			// if doesnt find namespace in labels, use hostname = node
+			// in Loki every node is labeled as hostname
+			// in alert manager/kubernetes the label is node and it used a FQDN
+			// ip-10-192-172-1.eu-west-1.compute.internal
+			if !nameValid {
+				label := "hostname"
+				app, nameValid := extractLabels(event, "node")
+				if nameValid {
+					// parse FQDN and use short hostname
+					if strings.Contains(app, ".") {
+						newapp := strings.Split(app, ".")
+						app = newapp[0]
+					}
+					grafanaURL, err := generateGrafanaURL(label, app, "", "", fromDate, toDate)
+					if err != nil {
+						return event, err
+					}
+					annotations["grafana_loki_url"] = grafanaURL
+				}
+			}
+
 		}
 		if mutatorConfig.GrafanaDashboardSuggested != "" {
 			dashboardSuggested := []DashboardSuggested{}
