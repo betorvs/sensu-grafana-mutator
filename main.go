@@ -20,23 +20,29 @@ type DashboardSuggested struct {
 // Config represents the mutator plugin config.
 type Config struct {
 	sensu.PluginConfig
-	GrafanaURL                         string
-	GrafanaLokiDatasource              string
-	GrafanaLokiExplorerStreamLabel     string
-	GrafanaLokiExplorerStreamSelector  string
-	GrafanaLokiExplorerPipeline        string
-	GrafanaLokiExplorerStreamNamespace string
-	AlertmanagerIntegrationLabel       string
-	GrafanaDashboardSuggested          string
-	GrafanaLokiExplorerRange           int
-	TimeRange                          int64
+	GrafanaURL                      string
+	GrafanaDashboardSuggested       string
+	GrafanaExploreLinkEnabled       bool
+	GrafanaLokiDatasource           string
+	SensuLabelSelector              string
+	KubernetesEventsIntegration     bool
+	KubernetesEventsStreamLabel     string
+	KubernetesEventsStreamSelector  string
+	KubernetesEventsPipeline        string
+	KubernetesEventsStreamNamespace string
+	AlertmanagerEventsIntegration   bool
+	AlertmanagerIntegrationLabel    string
+	DefaultLokiLabelNamespace       string
+	DefaultLokiLabelHostname        string
+	GrafanaMutatorTimeRange         int
+	TimeRange                       int64
 }
 
 var (
 	mutatorConfig = Config{
 		PluginConfig: sensu.PluginConfig{
 			Name:     "sensu-grafana-mutator",
-			Short:    "Sensu grafana mutator add grafana_*_url annotations",
+			Short:    "Sensu grafana mutator add Grafana Dashboards or Grafana Explore Links in event annotations",
 			Keyspace: "sensu.io/plugins/sensu-grafana-mutator/config",
 		},
 	}
@@ -52,76 +58,130 @@ var (
 			Value:     &mutatorConfig.GrafanaURL,
 		},
 		{
+			Path:      "grafana-dashboard-suggested",
+			Env:       "",
+			Argument:  "grafana-dashboard-suggested",
+			Shorthand: "d",
+			Default:   "",
+			Usage:     "Suggested Dashboard based on Labels. e. [{\"grafana_annotation\":\"kubernetes_namespace\",\"dashboard_url\":\"https://grafana.example.com/d/85a562078cdf77779eaa1add43ccec1e/kubernetes-compute-resources-namespace-pods?orgId=1&var-datasource=thanos\",\"labels\":[\"namespace\"]}]",
+			Value:     &mutatorConfig.GrafanaDashboardSuggested,
+		},
+		{
+			Path:      "grafana-explore-link-enabled",
+			Env:       "",
+			Argument:  "grafana-explore-link-enabled",
+			Shorthand: "e",
+			Default:   false,
+			Usage:     "Enable Grafana Loki Explore Links",
+			Value:     &mutatorConfig.GrafanaExploreLinkEnabled,
+		},
+		{
+			Path:      "kubernetes-events-integration",
+			Env:       "",
+			Argument:  "kubernetes-events-integration",
+			Shorthand: "k",
+			Default:   false,
+			Usage:     "Grafana Mutator parser for sensu-kubernetes-events plugin",
+			Value:     &mutatorConfig.KubernetesEventsIntegration,
+		},
+		{
+			Path:      "alertmanager-events-integration",
+			Env:       "",
+			Argument:  "alertmanager-events-integration",
+			Shorthand: "a",
+			Default:   false,
+			Usage:     "Grafana Mutator parser for sensu-alertmanager-events plugin",
+			Value:     &mutatorConfig.AlertmanagerEventsIntegration,
+		},
+		{
+			Path:      "grafana-mutator-time-range",
+			Env:       "",
+			Argument:  "grafana-mutator-time-range",
+			Shorthand: "r",
+			Default:   300,
+			Usage:     "Time range in seconds to create grafana URLs",
+			Value:     &mutatorConfig.GrafanaMutatorTimeRange,
+		},
+		{
 			Path:      "grafana-loki-datasource",
 			Env:       "GRAFANA_LOKI_DATASOURCE",
 			Argument:  "grafana-loki-datasource",
-			Shorthand: "d",
+			Shorthand: "D",
 			Default:   "loki",
 			Usage:     "An Grafana Loki Datasource name. e. -d loki ",
 			Value:     &mutatorConfig.GrafanaLokiDatasource,
 		},
 		{
-			Path:      "grafana-loki-explorer-stream-label",
-			Env:       "GRAFANA_LOKI_EXPLORER_STREAM_LABEL",
-			Argument:  "grafana-loki-explorer-stream-label",
-			Shorthand: "l",
-			Default:   "app",
-			Usage:     "From Grafana Loki streams use label. e. {app=eventrouter} then '-l app' ",
-			Value:     &mutatorConfig.GrafanaLokiExplorerStreamLabel,
-		},
-		{
-			Path:      "grafana-loki-explorer-stream-selector",
-			Env:       "GRAFANA_LOKI_EXPLORER_STREAM_SELECTOR",
-			Argument:  "grafana-loki-explorer-stream-selector",
+			Path:      "sensu-label-selector",
+			Env:       "SENSU_LABEL_SELECTOR",
+			Argument:  "sensu-label-selector",
 			Shorthand: "s",
-			Default:   "eventrouter",
-			Usage:     "From Grafana Loki streams use label. e. {app=eventrouter} then '-s eventrouter' ",
-			Value:     &mutatorConfig.GrafanaLokiExplorerStreamSelector,
-		},
-		{
-			Path:      "grafana-loki-explorer-pipeline",
-			Env:       "GRAFANA_LOKI_EXPLORER_PIPELINE",
-			Argument:  "grafana-loki-explorer-pipeline",
-			Shorthand: "p",
-			Default:   "",
-			Usage:     "From Sensu Events, choose one label to be parse here. e. {app=eventrouter} |= k8s_id then use -p k8s_id",
-			Value:     &mutatorConfig.GrafanaLokiExplorerPipeline,
-		},
-		{
-			Path:      "grafana-loki-explorer-range",
-			Env:       "",
-			Argument:  "grafana-loki-explorer-range",
-			Shorthand: "r",
-			Default:   300,
-			Usage:     "Time range in seconds to create grafana explorer URL",
-			Value:     &mutatorConfig.GrafanaLokiExplorerRange,
-		},
-		{
-			Path:      "grafana-loki-explorer-stream-namespace",
-			Env:       "GRAFANA_LOKI_EXPLORER_STREAM_NAMESPACE",
-			Argument:  "grafana-loki-explorer-stream-namespace",
-			Shorthand: "n",
-			Default:   "",
-			Usage:     "From Grafana Loki streams use namespace. e. {namespace=ValueFromEvent} then '-n NamespaceLabelName' ",
-			Value:     &mutatorConfig.GrafanaLokiExplorerStreamNamespace,
+			Default:   "kubernetes_namespace",
+			Usage:     "Sensu Label Selector to create Grafana Explore URL using loki as Datasource. {namespace=kubernetes_namespace.value}",
+			Value:     &mutatorConfig.SensuLabelSelector,
 		},
 		{
 			Path:      "alertmanager-integration-label",
-			Env:       "ALERTMANAGER_INTEGRATION_LABEL",
+			Env:       "",
 			Argument:  "alertmanager-integration-label",
 			Shorthand: "A",
 			Default:   "sensu-alertmanager-events",
-			Usage:     "Allow integration from sensu-alertmanager-events plugin",
+			Usage:     "Label used to identify sensu-alertmanager-events plugin events",
 			Value:     &mutatorConfig.AlertmanagerIntegrationLabel,
 		},
 		{
-			Path:      "grafana-dashboard-suggested",
-			Env:       "",
-			Argument:  "grafana-dashboard-suggested",
-			Shorthand: "D",
-			Default:   "",
-			Usage:     "Suggested Dashboard based on Labels. e. [{\"grafana_annotation\":\"kubernetes_namespace\",\"dashboard_url\":\"https://grafana.example.com/d/85a562078cdf77779eaa1add43ccec1e/kubernetes-compute-resources-namespace-pods?orgId=1&var-datasource=thanos\",\"labels\":[\"namespace\"]}]",
-			Value:     &mutatorConfig.GrafanaDashboardSuggested,
+			Path:      "kubernetes-events-stream-label",
+			Env:       "KUBERNETES_EVENTS_STREAM_LABEL",
+			Argument:  "kubernetes-events-stream-label",
+			Shorthand: "L",
+			Default:   "app",
+			Usage:     "Grafana Loki stream label. e. {app=eventrouter}",
+			Value:     &mutatorConfig.KubernetesEventsStreamLabel,
+		},
+		{
+			Path:      "kubernetes-events-stream-selector",
+			Env:       "KUBERNETES_EVENTS_STREAM_SELECTOR",
+			Argument:  "kubernetes-events-stream-selector",
+			Shorthand: "S",
+			Default:   "eventrouter",
+			Usage:     "Grafana Loki stream selector. e. {app=eventrouter}",
+			Value:     &mutatorConfig.KubernetesEventsStreamSelector,
+		},
+		{
+			Path:      "kubernetes-events-pipeline",
+			Env:       "KUBERNETES_EVENTS_PIPELINE",
+			Argument:  "kubernetes-events-pipeline",
+			Shorthand: "P",
+			Default:   "io.kubernetes.event.id",
+			Usage:     "Grafana Loki pipeline to match. e. {app=eventrouter} |= io.kubernetes.event.id",
+			Value:     &mutatorConfig.KubernetesEventsPipeline,
+		},
+		{
+			Path:      "kubernetes-events-stream-namespace",
+			Env:       "KUBERNETES_EVENTS_STREAM_NAMESPACE",
+			Argument:  "kubernetes-events-stream-namespace",
+			Shorthand: "N",
+			Default:   "io.kubernetes.event.namespace",
+			Usage:     "Grafana Loki stream namespace. e. {app=eventrouter,namespace=io.kubernetes.event.namespace}",
+			Value:     &mutatorConfig.KubernetesEventsStreamNamespace,
+		},
+		{
+			Path:      "default-loki-label-namespace",
+			Env:       "DEFAULT_LOKI_LABEL_NAMESPACE",
+			Argument:  "default-loki-label-namespace",
+			Shorthand: "",
+			Default:   "namespace",
+			Usage:     "Default namespace label for Grafana Loki Stream. {namespace=value}",
+			Value:     &mutatorConfig.DefaultLokiLabelNamespace,
+		},
+		{
+			Path:      "default-loki-label-hostname",
+			Env:       "DEFAULT_LOKI_LABEL_HOSTNAME",
+			Argument:  "default-loki-label-hostname",
+			Shorthand: "",
+			Default:   "hostname",
+			Usage:     "Default hostname label for Grafana Loki Stream. {hostname=value}",
+			Value:     &mutatorConfig.DefaultLokiLabelHostname,
 		},
 	}
 )
@@ -135,36 +195,41 @@ func checkArgs(_ *types.Event) error {
 	if mutatorConfig.GrafanaURL == "" {
 		return fmt.Errorf("--grafana-url or GRAFANA_URL environment variable is required")
 	}
-	if mutatorConfig.GrafanaLokiExplorerPipeline == "" {
-		return fmt.Errorf("--grafana-loki-explorer-pipeline or GRAFANA_LOKI_EXPLORER_PIPELINE environment variable is required")
-	}
-	mutatorConfig.TimeRange = int64(mutatorConfig.GrafanaLokiExplorerRange * 1000)
+	mutatorConfig.TimeRange = int64(mutatorConfig.GrafanaMutatorTimeRange * 1000)
 	return nil
 }
 
 func executeMutator(event *types.Event) (*types.Event, error) {
 	// log.Println("executing mutator with --grafana-url", mutatorConfig.GrafanaURL)
-	if mutatorConfig.GrafanaLokiExplorerPipeline != "" {
-		annotations := make(map[string]string)
-		fromDate := event.Timestamp * 1000
-		toDate := event.Timestamp*1000 + mutatorConfig.TimeRange
-		explorerPipeline, explorerValid := extractLabels(event, mutatorConfig.GrafanaLokiExplorerPipeline)
-		namespaceStream, namespaceValid := extractLabels(event, mutatorConfig.GrafanaLokiExplorerStreamNamespace)
-		if explorerValid && namespaceValid {
-			label := mutatorConfig.GrafanaLokiExplorerStreamLabel
-			app := mutatorConfig.GrafanaLokiExplorerStreamSelector
-			// fmt.Println(explorerPipeline, namespaceStream)
-			grafanaURL, err := generateGrafanaURL(label, app, explorerPipeline, namespaceStream, fromDate, toDate)
-			if err != nil {
-				return event, err
+	annotations := make(map[string]string)
+	fromDate := event.Timestamp * 1000
+	toDate := event.Timestamp*1000 + mutatorConfig.TimeRange
+	// to create grafana_loki_url annotation
+	if mutatorConfig.GrafanaExploreLinkEnabled {
+		sensuLabel, sensuLabelExist := extractLabels(event, mutatorConfig.SensuLabelSelector)
+		// using sensu-kubernetes-events plugin
+		if mutatorConfig.KubernetesEventsIntegration && !sensuLabelExist {
+			ExplorePipeline, ExploreValid := extractLabels(event, mutatorConfig.KubernetesEventsPipeline)
+			namespace := ""
+			namespaceStream, namespaceValid := extractLabels(event, mutatorConfig.KubernetesEventsStreamNamespace)
+			if namespaceValid {
+				namespace = namespaceStream
 			}
-			annotations["grafana_loki_url"] = grafanaURL
+			if ExploreValid {
+				label := mutatorConfig.KubernetesEventsStreamLabel
+				app := mutatorConfig.KubernetesEventsStreamSelector
+				grafanaURL, err := generateGrafanaURL(label, app, ExplorePipeline, namespace, fromDate, toDate)
+				if err != nil {
+					return event, err
+				}
+				annotations["grafana_loki_url"] = grafanaURL
+			}
 		}
-		if event.Check.Labels[mutatorConfig.AlertmanagerIntegrationLabel] == "owner" {
-			label := "namespace"
-			app, nameValid := extractLabels(event, "namespace")
+		// using sensu-alertmanager-events plugin
+		if event.Check.Labels[mutatorConfig.AlertmanagerIntegrationLabel] == "owner" && !sensuLabelExist {
+			app, nameValid := extractLabels(event, mutatorConfig.DefaultLokiLabelNamespace)
 			if nameValid {
-				grafanaURL, err := generateGrafanaURL(label, app, "", "", fromDate, toDate)
+				grafanaURL, err := generateGrafanaURL(mutatorConfig.DefaultLokiLabelNamespace, app, "", "", fromDate, toDate)
 				if err != nil {
 					return event, err
 				}
@@ -175,7 +240,7 @@ func executeMutator(event *types.Event) (*types.Event, error) {
 			// in alert manager/kubernetes the label is node and it used a FQDN
 			// ip-10-192-172-1.eu-west-1.compute.internal
 			if !nameValid {
-				label := "hostname"
+				label := mutatorConfig.DefaultLokiLabelHostname
 				app, nameValid := extractLabels(event, "node")
 				if nameValid {
 					// parse FQDN and use short hostname
@@ -190,56 +255,72 @@ func executeMutator(event *types.Event) (*types.Event, error) {
 					annotations["grafana_loki_url"] = grafanaURL
 				}
 			}
-
 		}
-		if mutatorConfig.GrafanaDashboardSuggested != "" {
-			dashboardSuggested := []DashboardSuggested{}
-			err := json.Unmarshal([]byte(mutatorConfig.GrafanaDashboardSuggested), &dashboardSuggested)
+		// using sensu label defined in --sensu-label-selecto
+		if sensuLabelExist {
+			label := mutatorConfig.DefaultLokiLabelNamespace
+			if mutatorConfig.SensuLabelSelector != "kubernetes_namespace" {
+				label = mutatorConfig.SensuLabelSelector
+			}
+			grafanaURL, err := generateGrafanaURL(label, sensuLabel, "", "", fromDate, toDate)
 			if err != nil {
 				return event, err
 			}
-			for _, v := range dashboardSuggested {
-				output := fmt.Sprintf("grafana_%s_url", strings.ToLower(v.GrafanaAnnotation))
-				grafanaURL, err := url.Parse(v.DashboardURL)
-				if err != nil {
-					return event, err
-				}
-				if !checkMissingOrgID(grafanaURL.Query()) {
-					return event, fmt.Errorf("Missing orgId in grafana URL in --grafana-dashboard-suggested. e. https://grafana.com/?orgId=1")
-				}
-				timeRange := fmt.Sprintf("&from=%d&to=%d", fromDate, toDate)
-				finalURI := ""
-				validFinalURI := false
-				count := 0
-				for _, s := range v.Labels {
-					// &var-namespace=test
-					value := ""
-					value, validFinalURI = extractLabels(event, s)
-					if validFinalURI {
-						finalURI += fmt.Sprintf("&var-%s=%s", s, value)
-						count++
-					}
-				}
-				if validFinalURI && len(v.Labels) == count {
-					annotations[output] = fmt.Sprintf("%s%s%s", grafanaURL, timeRange, finalURI)
-				}
-			}
+			annotations["grafana_loki_url"] = grafanaURL
+		}
 
+	}
+	// add any dashboard configured in --grafana-dashboard-suggested
+	if mutatorConfig.GrafanaDashboardSuggested != "" {
+		dashboardSuggested := []DashboardSuggested{}
+		err := json.Unmarshal([]byte(mutatorConfig.GrafanaDashboardSuggested), &dashboardSuggested)
+		if err != nil {
+			return event, err
 		}
-		if event.Check.Annotations != nil {
-			for k, v := range event.Check.Annotations {
-				annotations[k] = v
+		for _, v := range dashboardSuggested {
+			output := fmt.Sprintf("grafana_%s_url", strings.ToLower(v.GrafanaAnnotation))
+			grafanaURL, err := url.Parse(v.DashboardURL)
+			if err != nil {
+				return event, err
+			}
+			if !checkMissingOrgID(grafanaURL.Query()) {
+				return event, fmt.Errorf("Missing orgId in grafana URL in --grafana-dashboard-suggested. e. https://grafana.com/?orgId=1")
+			}
+			timeRange := fmt.Sprintf("&from=%d&to=%d", fromDate, toDate)
+			finalURI := ""
+			validFinalURI := false
+			count := 0
+			for _, s := range v.Labels {
+				// &var-namespace=test
+				value := ""
+				value, validFinalURI = extractLabels(event, s)
+				if validFinalURI {
+					finalURI += fmt.Sprintf("&var-%s=%s", s, value)
+					count++
+				}
+			}
+			if validFinalURI && len(v.Labels) == count {
+				annotations[output] = fmt.Sprintf("%s%s%s", grafanaURL, timeRange, finalURI)
 			}
 		}
-		event.Check.Annotations = annotations
+
 	}
+	// copy all annotations from event.check
+	if event.Check.Annotations != nil {
+		for k, v := range event.Check.Annotations {
+			annotations[k] = v
+		}
+	}
+	// add new annotations map with grafana URLs
+	event.Check.Annotations = annotations
+	fmt.Printf("%#v", event)
 	return event, nil
 }
 
 func generateGrafanaURL(l, a, v, n string, fromDate, toDate int64) (string, error) {
-	grafanaURL, err := grafanaExplorerURLEncoded(l, a, v, mutatorConfig.GrafanaURL, n, mutatorConfig.GrafanaLokiDatasource, fromDate, toDate)
+	grafanaURL, err := grafanaExploreURLEncoded(l, a, v, mutatorConfig.GrafanaURL, n, mutatorConfig.GrafanaLokiDatasource, fromDate, toDate)
 	if err != nil {
-		return "", fmt.Errorf("Cannot generate grafana loki explorer URL")
+		return "", fmt.Errorf("Cannot generate grafana loki Explore URL")
 	}
 	return grafanaURL, nil
 }
@@ -264,7 +345,7 @@ func replaceSpecial(s string) string {
 	return value
 }
 
-func grafanaExplorerURLEncoded(label, app, value, grafana, namespace, datasource string, fromDate, toDate int64) (string, error) {
+func grafanaExploreURLEncoded(label, app, value, grafana, namespace, datasource string, fromDate, toDate int64) (string, error) {
 	// grafana URL expected: https://grafana.com/?orgId=1
 	grafanaURL, err := url.Parse(grafana)
 	if err != nil {
@@ -275,7 +356,7 @@ func grafanaExplorerURLEncoded(label, app, value, grafana, namespace, datasource
 		return "", fmt.Errorf("Missing orgId in grafana URL. e. https://grafana.com/?orgId=1")
 	}
 	grafanaURL.Path = "explore"
-	grafanaExplorerURL := fmt.Sprintf("%s&left=", grafanaURL)
+	grafanaExploreURL := fmt.Sprintf("%s&left=", grafanaURL)
 	searchText := url.QueryEscape(fmt.Sprintf("{%s=\\\"%s\\\"}|=\\\"%s\\\"", label, app, value))
 	if namespace != "" {
 		searchText = url.QueryEscape(fmt.Sprintf("{%s=\\\"%s\\\",namespace=\\\"%s\\\"}|=\\\"%s\\\"", label, app, namespace, value))
@@ -283,8 +364,8 @@ func grafanaExplorerURLEncoded(label, app, value, grafana, namespace, datasource
 	if value == "" && namespace == "" {
 		searchText = url.QueryEscape(fmt.Sprintf("{%s=\\\"%s\\\"}", label, app))
 	}
-	grafanaExplorerURI := fmt.Sprintf("[\"%d\",\"%d\",\"%s\",{\"expr\":\"%s\"}]", fromDate, toDate, datasource, searchText)
-	result := fmt.Sprintf("%s%s", grafanaExplorerURL, replaceSpecial(grafanaExplorerURI))
+	grafanaExploreURI := fmt.Sprintf("[\"%d\",\"%d\",\"%s\",{\"expr\":\"%s\"}]", fromDate, toDate, datasource, searchText)
+	result := fmt.Sprintf("%s%s", grafanaExploreURL, replaceSpecial(grafanaExploreURI))
 	return result, nil
 }
 
