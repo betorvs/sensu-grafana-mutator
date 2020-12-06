@@ -7,7 +7,7 @@ Versioning](http://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
-## [0.0.1] - 2000-01-01
+## [0.0.1] - 2020-12-06
 
 ### Added
-- Initial release
+- Initial release: Add Grafana Dashboards URLs, Add Grafana Explore Loki URLs, kubernetes-events plugin integration, alertmanager plugins integration
