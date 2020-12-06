@@ -15,7 +15,7 @@ func TestCheckArgs(t *testing.T) {
 	assert.Error(err)
 	event2 := v2.FixtureEvent("entity2", "check2")
 	mutatorConfig.GrafanaURL = "http://127.0.0.1:3000/?orgId=1"
-	mutatorConfig.KubernetesEventsPipeline = "k8s_id"
+	mutatorConfig.GrafanaExploreLinkEnabled = true
 	err2 := checkArgs(event2)
 	assert.NoError(err2)
 }

@@ -63,7 +63,7 @@ var (
 			Argument:  "grafana-dashboard-suggested",
 			Shorthand: "d",
 			Default:   "",
-			Usage:     "Suggested Dashboard based on Labels. e. [{\"grafana_annotation\":\"kubernetes_namespace\",\"dashboard_url\":\"https://grafana.example.com/d/85a562078cdf77779eaa1add43ccec1e/kubernetes-compute-resources-namespace-pods?orgId=1&var-datasource=thanos\",\"labels\":[\"namespace\"]}]",
+			Usage:     "Suggested Dashboard based on Labels (json format). e. [{\"grafana_annotation\":\"kubernetes_namespace\",\"dashboard_url\":\"https://grafana.example.com/d/85a562078cdf77779eaa1add43ccec1e/kubernetes-compute-resources-namespace-pods?orgId=1&var-datasource=thanos\",\"labels\":[\"namespace\"]}]",
 			Value:     &mutatorConfig.GrafanaDashboardSuggested,
 		},
 		{
@@ -192,8 +192,11 @@ func main() {
 }
 
 func checkArgs(_ *types.Event) error {
-	if mutatorConfig.GrafanaURL == "" {
-		return fmt.Errorf("--grafana-url or GRAFANA_URL environment variable is required")
+	if mutatorConfig.GrafanaDashboardSuggested == "" && !mutatorConfig.GrafanaExploreLinkEnabled {
+		return fmt.Errorf("please choose one of these two flags --grafana-dashboard-suggested or --grafana-explore-link-enabled")
+	}
+	if mutatorConfig.GrafanaExploreLinkEnabled && mutatorConfig.GrafanaURL == "" {
+		return fmt.Errorf("using --grafana-explore-link-enabled then --grafana-url or GRAFANA_URL environment variable is required")
 	}
 	mutatorConfig.TimeRange = int64(mutatorConfig.GrafanaMutatorTimeRange * 1000)
 	return nil
@@ -313,7 +316,6 @@ func executeMutator(event *types.Event) (*types.Event, error) {
 	}
 	// add new annotations map with grafana URLs
 	event.Check.Annotations = annotations
-	fmt.Printf("%#v", event)
 	return event, nil
 }
 
