@@ -7,6 +7,13 @@ Versioning](http://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
+## [0.0.2] - 
+
+### Changed
+- change `--grafana-dashboard-suggested` to add match_labels in json
+- change `--grafana-mutator-time-range` increate time range
+
+
 ## [0.0.1] - 2020-12-06
 
 ### Added
