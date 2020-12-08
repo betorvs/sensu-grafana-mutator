@@ -12,9 +12,10 @@ import (
 
 // DashboardSuggested struct
 type DashboardSuggested struct {
-	GrafanaAnnotation string   `json:"grafana_annotation"`
-	DashboardURL      string   `json:"dashboard_url"`
-	Labels            []string `json:"labels"`
+	GrafanaAnnotation string            `json:"grafana_annotation"`
+	DashboardURL      string            `json:"dashboard_url"`
+	Labels            []string          `json:"labels"`
+	MatchLabels       map[string]string `json:"match_labels"`
 }
 
 // Config represents the mutator plugin config.
@@ -63,7 +64,7 @@ var (
 			Argument:  "grafana-dashboard-suggested",
 			Shorthand: "d",
 			Default:   "",
-			Usage:     "Suggested Dashboard based on Labels (json format). e. [{\"grafana_annotation\":\"kubernetes_namespace\",\"dashboard_url\":\"https://grafana.example.com/d/85a562078cdf77779eaa1add43ccec1e/kubernetes-compute-resources-namespace-pods?orgId=1&var-datasource=thanos\",\"labels\":[\"namespace\"]}]",
+			Usage:     "Suggested Dashboard based on Labels and add it in Grafana URL as &var-label[key]=label[value] (only json format). e. [{\"grafana_annotation\":\"kubernetes_namespace\",\"dashboard_url\":\"https://grafana.example.com/d/85a562078cdf77779eaa1add43ccec1e/kubernetes-compute-resources-namespace-pods?orgId=1&var-datasource=thanos\",\"labels\":[\"namespace\"]}]",
 			Value:     &mutatorConfig.GrafanaDashboardSuggested,
 		},
 		{
@@ -99,7 +100,7 @@ var (
 			Argument:  "grafana-mutator-time-range",
 			Shorthand: "r",
 			Default:   300,
-			Usage:     "Time range in seconds to create grafana URLs",
+			Usage:     "Time range in seconds to create grafana URLs. It will use FromDate = 'event.timestamp - time-range' and ToDate = 'event.timestamp + time-range'",
 			Value:     &mutatorConfig.GrafanaMutatorTimeRange,
 		},
 		{
@@ -205,7 +206,7 @@ func checkArgs(_ *types.Event) error {
 func executeMutator(event *types.Event) (*types.Event, error) {
 	// log.Println("executing mutator with --grafana-url", mutatorConfig.GrafanaURL)
 	annotations := make(map[string]string)
-	fromDate := event.Timestamp * 1000
+	fromDate := event.Timestamp*1000 - mutatorConfig.TimeRange
 	toDate := event.Timestamp*1000 + mutatorConfig.TimeRange
 	// to create grafana_loki_url annotation
 	if mutatorConfig.GrafanaExploreLinkEnabled {
@@ -290,20 +291,36 @@ func executeMutator(event *types.Event) (*types.Event, error) {
 				return event, fmt.Errorf("Missing orgId in grafana URL in --grafana-dashboard-suggested. e. https://grafana.com/?orgId=1")
 			}
 			timeRange := fmt.Sprintf("&from=%d&to=%d", fromDate, toDate)
-			finalURI := ""
-			validFinalURI := false
-			count := 0
-			for _, s := range v.Labels {
-				// &var-namespace=test
-				value := ""
-				value, validFinalURI = extractLabels(event, s)
-				if validFinalURI {
-					finalURI += fmt.Sprintf("&var-%s=%s", s, value)
-					count++
+			// finalURI := ""
+			// validFinalURI := false
+			// count := 0
+			if v.MatchLabels != nil {
+				if searchMatchLabels(event, v.MatchLabels) {
+					if v.Labels != nil {
+						// fmt.Println("both")
+						// case match matchLabels and found labels
+						finalURI, validFinalURI := generateURIBySlice(event, v.Labels)
+						// fmt.Println(finalURI)
+						if validFinalURI {
+							// output += "_lm"
+							annotations[output] = fmt.Sprintf("%s%s%s", grafanaURL, timeRange, finalURI)
+						}
+					} else {
+						// fmt.Println("only match")
+						// only match labels is used, no labels provided
+						// output += "__m"
+						annotations[output] = fmt.Sprintf("%s%s", grafanaURL, timeRange)
+					}
 				}
-			}
-			if validFinalURI && len(v.Labels) == count {
-				annotations[output] = fmt.Sprintf("%s%s%s", grafanaURL, timeRange, finalURI)
+
+			} else {
+				// fmt.Println("only labels")
+				finalURI, validFinalURI := generateURIBySlice(event, v.Labels)
+				// fmt.Println(finalURI)
+				if validFinalURI {
+					// output += "_l_"
+					annotations[output] = fmt.Sprintf("%s%s%s", grafanaURL, timeRange, finalURI)
+				}
 			}
 		}
 
@@ -407,4 +424,57 @@ func extractLabels(event *types.Event, label string) (string, bool) {
 		return labelFound, false
 	}
 	return labelFound, true
+}
+
+func generateURIBySlice(event *types.Event, v []string) (string, bool) {
+	count := 0
+	finalURI := ""
+	for _, s := range v {
+		// &var-namespace=test
+		value, validFinalURI := extractLabels(event, s)
+		if validFinalURI {
+			finalURI += fmt.Sprintf("&var-%s=%s", s, value)
+			count++
+		}
+	}
+	// fmt.Println(finalURI, count)
+	if len(v) == count {
+		return finalURI, true
+	}
+	return "", false
+}
+
+func searchMatchLabels(event *types.Event, labels map[string]string) bool {
+	if len(labels) == 0 {
+		return false
+	}
+	count := 0
+	for key, value := range labels {
+		if event.Labels != nil {
+			for k, v := range event.Labels {
+				if k == key && v == value {
+					count++
+				}
+			}
+		}
+		if event.Entity.Labels != nil {
+			for k, v := range event.Entity.Labels {
+				if k == key && v == value {
+					count++
+				}
+			}
+		}
+		if event.Check.Labels != nil {
+			for k, v := range event.Check.Labels {
+				if k == key && v == value {
+					count++
+				}
+			}
+		}
+		if count == len(labels) {
+			return true
+		}
+	}
+
+	return false
 }

@@ -10,9 +10,10 @@
 - [Usage](#usage)
 - [Configuration](#configuration)
   - [Requirements](#requirements)
-    - [Sensu Kubernetes Events](#sensu-kubernetes-events)
-    - [Sensu Alertmanager Events](#sensu-alertmanager-events)
-    - [Grafana Dashboard Suggested](#grafana-dashboard-suggested)
+  - [Sensu Kubernetes Events](#sensu-kubernetes-events)
+  - [Sensu Alertmanager Events](#sensu-alertmanager-events)
+  - [Grafana Dashboard Suggested](#grafana-dashboard-suggested)
+    - [Labels and Match Labels](#labels-and-match-labels)
   - [Asset registration](#asset-registration)
   - [Mutator definition](#mutator-definition)
     - [Full Example](#full-example)
@@ -46,10 +47,10 @@ Flags:
   -A, --alertmanager-integration-label string       Label used to identify sensu-alertmanager-events plugin events (default "sensu-alertmanager-events")
       --default-loki-label-hostname string          Default hostname label for Grafana Loki Stream. {hostname=value} (default "hostname")
       --default-loki-label-namespace string         Default namespace label for Grafana Loki Stream. {namespace=value} (default "namespace")
-  -d, --grafana-dashboard-suggested string          Suggested Dashboard based on Labels (json format). e. [{"grafana_annotation":"kubernetes_namespace","dashboard_url":"https://grafana.example.com/d/85a562078cdf77779eaa1add43ccec1e/kubernetes-compute-resources-namespace-pods?orgId=1&var-datasource=thanos","labels":["namespace"]}]
+  -d, --grafana-dashboard-suggested string          Suggested Dashboard based on Labels and add it in Grafana URL as &var-label[key]=label[value] (only json format). e. [{"grafana_annotation":"kubernetes_namespace","dashboard_url":"https://grafana.example.com/d/85a562078cdf77779eaa1add43ccec1e/kubernetes-compute-resources-namespace-pods?orgId=1&var-datasource=thanos","labels":["namespace"]}]
   -e, --grafana-explore-link-enabled                Enable Grafana Loki Explore Links
   -D, --grafana-loki-datasource string              An Grafana Loki Datasource name. e. -d loki  (default "loki")
-  -r, --grafana-mutator-time-range int              Time range in seconds to create grafana URLs (default 300)
+  -r, --grafana-mutator-time-range int              Time range in seconds to create grafana URLs. It will use FromDate = 'event.timestamp - time-range' and ToDate = 'event.timestamp + time-range' (default 300)
   -g, --grafana-url string                          An grafana complete URL. e. https://grafana.com/?orgId=1 
   -h, --help                                        help for sensu-grafana-mutator
   -k, --kubernetes-events-integration               Grafana Mutator parser for sensu-kubernetes-events plugin
@@ -84,7 +85,7 @@ cat event.json | ./sensu-grafana-mutator -g https://grafana.example.com/?orgId=1
 
 You should have [Grafana][8] installed and configured. If you want to use `--grafana-explore-link-enabled` you should have a [Grafana Loki][5] installed and receiving logs. 
 
-#### sensu-kubernetes-events
+### sensu-kubernetes-events
 
 - Import events from kubernetes using [eventrouter][3] to [Grafana Loki][5]
 - Import kubernetes events in Sensu using [sensu-kubernetes-events plugin][4]
@@ -101,7 +102,7 @@ cat event.json | ./sensu-grafana-mutator -g https://grafana.example.com/?orgId=1
 
 Output annotation: `event.check.annotations["grafana_loki_url"]`.
 
-#### sensu-alertmanager-events
+### sensu-alertmanager-events
 
 It will try to find the label in event.check.Label with name `sensu-alertmanager-events` and value `owner` then it will create a grafana loki URL using only namespace in stream. Example: `{namespace="Value"}`. Only change `--alertmanager-integration-label` if the [sensu-alertmanager-events][6] plugin changed it.
 
@@ -113,7 +114,7 @@ cat event.json | ./sensu-grafana-mutator -g https://grafana.example.com/?orgId=1
 
 Output annotation: `event.check.annotations["grafana_loki_url"]`.
 
-#### grafana-dashboard-suggested
+### grafana-dashboard-suggested
 
 You can include multiples grafana_annotations inside this flag. But we don't have a benchmark about it. Then keep it simple and it will work as expected. We used one example dashboard from [kubernetes-mixin][7] called kubernetes-compute-resources-namespace-pods. 
 
@@ -138,6 +139,46 @@ cat event.json | ./sensu-grafana-mutator -d "[{\"grafana_annotation\":\"kubernet
 ```
 
 Output annotation: `event.check.annotations["grafana_kubernetes_namespace_url"]`.
+
+#### Labels and Match Labels
+
+In definition for `--grafana-dashboard-suggested` we should use one json (one line with escapes):
+
+```json
+[
+  {
+    "grafana_annotation": "kubernetes_namespace",
+    "dashboard_url": "https://grafana.example.com/d/85a562078cdf77779eaa1add43ccec1e/kubernetes-compute-resources-namespace-pods?orgId=1&var-datasource=thanos",
+    "labels": [
+      "namespace",
+      "cluster"
+    ]
+  },
+  {
+    "grafana_annotation": "kubelet",
+    "dashboard_url": "https://grafana.example.com/d/3138fa155d5915769fbded898ac09fd9/kubernetes-kubelet?orgId=1&var-datasource=thanos",
+    "labels": [
+      "cluster"
+    ],
+    "match_labels": {
+        "alertname": "KubeletPlegDurationHigh"
+    }
+  },
+  {
+    "grafana_annotation": "controller",
+    "dashboard_url": "https://grafana.example.com/d/72e0e05bef5099e5f049b05fdc429ed4/kubernetes-controller-manager?orgId=1",
+    "match_labels": {
+        "alertname": "KubeAPILatencyHigh",
+        "component": "apiserver"
+    }
+  }
+]
+```
+
+Only to explain it, if:
+  - match labels "alertname=KubeletPlegDurationHigh" add: `"grafana_kubelet_url": "https://grafana.example.com/d/3138fa155d5915769fbded898ac09fd9/kubernetes-kubelet?orgId=1&var-datasource=thanos&from=1607077959000&to=1607078559000&var-cluster=k8s-b.dev.ppro.com"`
+  - match labels "alertname=KubeAPILatencyHigh" and "component=apiserver" add: `"grafana_controller_url": "https://grafana.example.com/d/72e0e05bef5099e5f049b05fdc429ed4/kubernetes-controller-manager?orgId=1&from=1607412032000&to=1607412332000"`
+  - only find these labels "namespace" and "cluster" add: `"grafana_controller_url": "https://grafana.example.com/d/72e0e05bef5099e5f049b05fdc429ed4/kubernetes-controller-manager?orgId=1&from=1607412032000&to=1607412332000"`
 
 ### Asset registration
 

@@ -66,3 +66,35 @@ func TestExtractLabels(t *testing.T) {
 	_, result2 := extractLabels(event2, "test2")
 	assert.False(t, result2)
 }
+
+func TestGenerateURIBySlice(t *testing.T) {
+	labels := []string{"testa", "testb"}
+	event1 := v2.FixtureEvent("entity1", "check1")
+	event1.Labels["testa"] = "valuea"
+	event1.Labels["testb"] = "valueb"
+	expected1 := "&var-testa=valuea&var-testb=valueb"
+	result1, res1 := generateURIBySlice(event1, labels)
+	assert.True(t, res1)
+	assert.Contains(t, result1, expected1)
+	event2 := v2.FixtureEvent("entity2", "check2")
+	event2.Labels["testa"] = "valuea"
+	event2.Labels["testb"] = "valueb"
+	_, res2 := generateURIBySlice(event1, labels)
+	assert.True(t, res2)
+}
+
+func TestSearchMatchLabels(t *testing.T) {
+	event1 := v2.FixtureEvent("entity1", "check1")
+	event1.Labels["testa"] = "valuea"
+	event1.Labels["testb"] = "valueb"
+	event1.Labels["testc"] = "valuec"
+	labels := make(map[string]string)
+	res1 := searchMatchLabels(event1, labels)
+	assert.False(t, res1)
+
+	labels["testa"] = "valuea"
+	labels["testc"] = "valuec"
+	res2 := searchMatchLabels(event1, labels)
+	assert.True(t, res2)
+
+}
