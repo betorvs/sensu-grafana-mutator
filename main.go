@@ -35,6 +35,7 @@ type Config struct {
 	AlertmanagerIntegrationLabel    string
 	DefaultLokiLabelNamespace       string
 	DefaultLokiLabelHostname        string
+	AlwaysReturnEvent               bool
 	GrafanaMutatorTimeRange         int
 	TimeRange                       int64
 }
@@ -93,6 +94,15 @@ var (
 			Default:   false,
 			Usage:     "Grafana Mutator parser for sensu-alertmanager-events plugin",
 			Value:     &mutatorConfig.AlertmanagerEventsIntegration,
+		},
+		{
+			Path:      "always-return-event",
+			Env:       "",
+			Argument:  "always-return-event",
+			Shorthand: "",
+			Default:   false,
+			Usage:     "Grafana Mutator will always return an event, even if it has error. All errors will be reported in event.annotations[sensu-grafana-mutator/error]",
+			Value:     &mutatorConfig.AlwaysReturnEvent,
 		},
 		{
 			Path:      "grafana-mutator-time-range",
@@ -208,6 +218,7 @@ func executeMutator(event *types.Event) (*types.Event, error) {
 	annotations := make(map[string]string)
 	fromDate := event.Timestamp*1000 - mutatorConfig.TimeRange
 	toDate := event.Timestamp*1000 + mutatorConfig.TimeRange
+	errorAnnotationName := fmt.Sprintf("%s/error", mutatorConfig.Name)
 	// to create grafana_loki_url annotation
 	if mutatorConfig.GrafanaExploreLinkEnabled {
 		sensuLabel, sensuLabelExist := extractLabels(event, mutatorConfig.SensuLabelSelector)
@@ -224,6 +235,11 @@ func executeMutator(event *types.Event) (*types.Event, error) {
 				app := mutatorConfig.KubernetesEventsStreamSelector
 				grafanaURL, err := generateGrafanaURL(label, app, ExplorePipeline, namespace, fromDate, toDate)
 				if err != nil {
+					annotations[errorAnnotationName] = fmt.Sprintf("failed generating grafana URL %v", err)
+					event.Annotations = annotations
+					if mutatorConfig.AlwaysReturnEvent {
+						return event, nil
+					}
 					return event, err
 				}
 				annotations["grafana_loki_url"] = grafanaURL
@@ -235,6 +251,11 @@ func executeMutator(event *types.Event) (*types.Event, error) {
 			if nameValid {
 				grafanaURL, err := generateGrafanaURL(mutatorConfig.DefaultLokiLabelNamespace, app, "", "", fromDate, toDate)
 				if err != nil {
+					annotations[errorAnnotationName] = fmt.Sprintf("failed generating grafana URL %v", err)
+					event.Annotations = annotations
+					if mutatorConfig.AlwaysReturnEvent {
+						return event, nil
+					}
 					return event, err
 				}
 				annotations["grafana_loki_url"] = grafanaURL
@@ -254,13 +275,18 @@ func executeMutator(event *types.Event) (*types.Event, error) {
 					}
 					grafanaURL, err := generateGrafanaURL(label, app, "", "", fromDate, toDate)
 					if err != nil {
+						annotations[errorAnnotationName] = fmt.Sprintf("failed generating grafana URL %v", err)
+						event.Annotations = annotations
+						if mutatorConfig.AlwaysReturnEvent {
+							return event, nil
+						}
 						return event, err
 					}
 					annotations["grafana_loki_url"] = grafanaURL
 				}
 			}
 		}
-		// using sensu label defined in --sensu-label-selecto
+		// using sensu label defined in --sensu-label-selector
 		if sensuLabelExist {
 			label := mutatorConfig.DefaultLokiLabelNamespace
 			if mutatorConfig.SensuLabelSelector != "kubernetes_namespace" {
@@ -268,6 +294,11 @@ func executeMutator(event *types.Event) (*types.Event, error) {
 			}
 			grafanaURL, err := generateGrafanaURL(label, sensuLabel, "", "", fromDate, toDate)
 			if err != nil {
+				annotations[errorAnnotationName] = fmt.Sprintf("failed generating grafana URL %v", err)
+				event.Annotations = annotations
+				if mutatorConfig.AlwaysReturnEvent {
+					return event, nil
+				}
 				return event, err
 			}
 			annotations["grafana_loki_url"] = grafanaURL
@@ -279,15 +310,30 @@ func executeMutator(event *types.Event) (*types.Event, error) {
 		dashboardSuggested := []DashboardSuggested{}
 		err := json.Unmarshal([]byte(mutatorConfig.GrafanaDashboardSuggested), &dashboardSuggested)
 		if err != nil {
+			annotations[errorAnnotationName] = fmt.Sprintf("json config %v", err)
+			event.Annotations = annotations
+			if mutatorConfig.AlwaysReturnEvent {
+				return event, nil
+			}
 			return event, err
 		}
 		for _, v := range dashboardSuggested {
 			output := fmt.Sprintf("grafana_%s_url", strings.ToLower(v.GrafanaAnnotation))
 			grafanaURL, err := url.Parse(v.DashboardURL)
 			if err != nil {
+				annotations[errorAnnotationName] = fmt.Sprintf("failed generating grafana URL %v", err)
+				event.Annotations = annotations
+				if mutatorConfig.AlwaysReturnEvent {
+					return event, nil
+				}
 				return event, err
 			}
 			if !checkMissingOrgID(grafanaURL.Query()) {
+				annotations[errorAnnotationName] = "Missing orgId in grafana URL in --grafana-dashboard-suggested. e. https://grafana.com/?orgId=1"
+				event.Annotations = annotations
+				if mutatorConfig.AlwaysReturnEvent {
+					return event, nil
+				}
 				return event, fmt.Errorf("Missing orgId in grafana URL in --grafana-dashboard-suggested. e. https://grafana.com/?orgId=1")
 			}
 			timeRange := fmt.Sprintf("&from=%d&to=%d", fromDate, toDate)

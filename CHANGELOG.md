@@ -9,6 +9,9 @@ Versioning](http://semver.org/spec/v2.0.0.html).
 
 ## [0.0.2] - 
 
+### Added
+- Add `--always-return-event` flag to return sensu event with a annotation with this error. To avoid missing any event you should use this flag.
+
 ### Changed
 - change `--grafana-dashboard-suggested` to add match_labels in json
 - change `--grafana-mutator-time-range` increate time range

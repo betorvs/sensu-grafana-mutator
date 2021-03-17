@@ -45,6 +45,7 @@ Available Commands:
 Flags:
   -a, --alertmanager-events-integration             Grafana Mutator parser for sensu-alertmanager-events plugin
   -A, --alertmanager-integration-label string       Label used to identify sensu-alertmanager-events plugin events (default "sensu-alertmanager-events")
+      --always-return-event                         Grafana Mutator will always return an event, even if it has error. All errors will be reported in event.annotations[sensu-grafana-mutator/error]
       --default-loki-label-hostname string          Default hostname label for Grafana Loki Stream. {hostname=value} (default "hostname")
       --default-loki-label-namespace string         Default namespace label for Grafana Loki Stream. {namespace=value} (default "namespace")
   -d, --grafana-dashboard-suggested string          Suggested Dashboard based on Labels and add it in Grafana URL as &var-label[key]=label[value] (only json format). e. [{"grafana_annotation":"kubernetes_namespace","dashboard_url":"https://grafana.example.com/d/85a562078cdf77779eaa1add43ccec1e/kubernetes-compute-resources-namespace-pods?orgId=1&var-datasource=thanos","labels":["namespace"]}]
