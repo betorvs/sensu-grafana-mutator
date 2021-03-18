@@ -219,6 +219,10 @@ func executeMutator(event *types.Event) (*types.Event, error) {
 	fromDate := event.Timestamp*1000 - mutatorConfig.TimeRange
 	toDate := event.Timestamp*1000 + mutatorConfig.TimeRange
 	errorAnnotationName := fmt.Sprintf("%s/error", mutatorConfig.Name)
+	// if check.annotations is empty, make it
+	if event.Check.Annotations == nil {
+		event.Check.Annotations = make(map[string]string)
+	}
 	// to create grafana_loki_url annotation
 	if mutatorConfig.GrafanaExploreLinkEnabled {
 		sensuLabel, sensuLabelExist := extractLabels(event, mutatorConfig.SensuLabelSelector)
@@ -236,7 +240,7 @@ func executeMutator(event *types.Event) (*types.Event, error) {
 				grafanaURL, err := generateGrafanaURL(label, app, ExplorePipeline, namespace, fromDate, toDate)
 				if err != nil {
 					annotations[errorAnnotationName] = fmt.Sprintf("failed generating grafana URL %v", err)
-					event.Annotations = annotations
+					event.Check.Annotations = mergeStringMaps(event.Check.Annotations, annotations)
 					if mutatorConfig.AlwaysReturnEvent {
 						return event, nil
 					}
@@ -252,7 +256,7 @@ func executeMutator(event *types.Event) (*types.Event, error) {
 				grafanaURL, err := generateGrafanaURL(mutatorConfig.DefaultLokiLabelNamespace, app, "", "", fromDate, toDate)
 				if err != nil {
 					annotations[errorAnnotationName] = fmt.Sprintf("failed generating grafana URL %v", err)
-					event.Annotations = annotations
+					event.Check.Annotations = mergeStringMaps(event.Check.Annotations, annotations)
 					if mutatorConfig.AlwaysReturnEvent {
 						return event, nil
 					}
@@ -276,7 +280,7 @@ func executeMutator(event *types.Event) (*types.Event, error) {
 					grafanaURL, err := generateGrafanaURL(label, app, "", "", fromDate, toDate)
 					if err != nil {
 						annotations[errorAnnotationName] = fmt.Sprintf("failed generating grafana URL %v", err)
-						event.Annotations = annotations
+						event.Check.Annotations = mergeStringMaps(event.Check.Annotations, annotations)
 						if mutatorConfig.AlwaysReturnEvent {
 							return event, nil
 						}
@@ -295,7 +299,7 @@ func executeMutator(event *types.Event) (*types.Event, error) {
 			grafanaURL, err := generateGrafanaURL(label, sensuLabel, "", "", fromDate, toDate)
 			if err != nil {
 				annotations[errorAnnotationName] = fmt.Sprintf("failed generating grafana URL %v", err)
-				event.Annotations = annotations
+				event.Check.Annotations = mergeStringMaps(event.Check.Annotations, annotations)
 				if mutatorConfig.AlwaysReturnEvent {
 					return event, nil
 				}
@@ -311,7 +315,7 @@ func executeMutator(event *types.Event) (*types.Event, error) {
 		err := json.Unmarshal([]byte(mutatorConfig.GrafanaDashboardSuggested), &dashboardSuggested)
 		if err != nil {
 			annotations[errorAnnotationName] = fmt.Sprintf("json config %v", err)
-			event.Annotations = annotations
+			event.Check.Annotations = mergeStringMaps(event.Check.Annotations, annotations)
 			if mutatorConfig.AlwaysReturnEvent {
 				return event, nil
 			}
@@ -322,7 +326,7 @@ func executeMutator(event *types.Event) (*types.Event, error) {
 			grafanaURL, err := url.Parse(v.DashboardURL)
 			if err != nil {
 				annotations[errorAnnotationName] = fmt.Sprintf("failed generating grafana URL %v", err)
-				event.Annotations = annotations
+				event.Check.Annotations = mergeStringMaps(event.Check.Annotations, annotations)
 				if mutatorConfig.AlwaysReturnEvent {
 					return event, nil
 				}
@@ -330,7 +334,7 @@ func executeMutator(event *types.Event) (*types.Event, error) {
 			}
 			if !checkMissingOrgID(grafanaURL.Query()) {
 				annotations[errorAnnotationName] = "Missing orgId in grafana URL in --grafana-dashboard-suggested. e. https://grafana.com/?orgId=1"
-				event.Annotations = annotations
+				event.Check.Annotations = mergeStringMaps(event.Check.Annotations, annotations)
 				if mutatorConfig.AlwaysReturnEvent {
 					return event, nil
 				}
@@ -371,14 +375,10 @@ func executeMutator(event *types.Event) (*types.Event, error) {
 		}
 
 	}
-	// copy all annotations from event.check
-	if event.Check.Annotations != nil {
-		for k, v := range event.Check.Annotations {
-			annotations[k] = v
-		}
-	}
-	// add new annotations map with grafana URLs
-	event.Check.Annotations = annotations
+
+	// merge new annotations into event.check.annotation
+	event.Check.Annotations = mergeStringMaps(event.Check.Annotations, annotations)
+
 	return event, nil
 }
 
@@ -523,4 +523,14 @@ func searchMatchLabels(event *types.Event, labels map[string]string) bool {
 	}
 
 	return false
+}
+
+func mergeStringMaps(left, right map[string]string) map[string]string {
+	for k, v := range right {
+		// fmt.Println(left[k])
+		if left[k] == "" {
+			left[k] = v
+		}
+	}
+	return left
 }

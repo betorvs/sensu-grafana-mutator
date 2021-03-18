@@ -98,3 +98,26 @@ func TestSearchMatchLabels(t *testing.T) {
 	assert.True(t, res2)
 
 }
+
+func TestMergeStringMaps(t *testing.T) {
+	left1 := map[string]string{"left1": "leftValue1"}
+	right1 := map[string]string{"right1": "rightValue1"}
+	val1 := map[string]string{"left1": "leftValue1", "right1": "rightValue1"}
+	res1 := mergeStringMaps(left1, right1)
+	assert.Equal(t, val1, res1)
+	left2 := map[string]string{"left1": "leftValue1"}
+	right2 := map[string]string{"right1": "rightValue1", "left1": "rightValueLeft1"}
+	val2 := map[string]string{"left1": "leftValue1", "right1": "rightValue1"}
+	res2 := mergeStringMaps(left2, right2)
+	assert.Equal(t, val2, res2)
+	left3 := map[string]string{"left1": "leftValue1"}
+	right3 := map[string]string{}
+	val3 := map[string]string{"left1": "leftValue1"}
+	res3 := mergeStringMaps(left3, right3)
+	assert.Equal(t, val3, res3)
+	left4 := map[string]string{}
+	right4 := map[string]string{"right1": "rightValue1"}
+	val4 := map[string]string{"right1": "rightValue1"}
+	res4 := mergeStringMaps(left4, right4)
+	assert.Equal(t, val4, res4)
+}
