@@ -43,23 +43,26 @@ Available Commands:
   version     Print the version number of this plugin
 
 Flags:
-  -a, --alertmanager-events-integration             Grafana Mutator parser for sensu-alertmanager-events plugin
-  -A, --alertmanager-integration-label string       Label used to identify sensu-alertmanager-events plugin events (default "sensu-alertmanager-events")
-      --always-return-event                         Grafana Mutator will always return an event, even if it has error. All errors will be reported in event.annotations[sensu-grafana-mutator/error]
-      --default-loki-label-hostname string          Default hostname label for Grafana Loki Stream. {hostname=value} (default "hostname")
-      --default-loki-label-namespace string         Default namespace label for Grafana Loki Stream. {namespace=value} (default "namespace")
-  -d, --grafana-dashboard-suggested string          Suggested Dashboard based on Labels and add it in Grafana URL as &var-label[key]=label[value] (only json format). e. [{"grafana_annotation":"kubernetes_namespace","dashboard_url":"https://grafana.example.com/d/85a562078cdf77779eaa1add43ccec1e/kubernetes-compute-resources-namespace-pods?orgId=1&var-datasource=thanos","labels":["namespace"]}]
-  -e, --grafana-explore-link-enabled                Enable Grafana Loki Explore Links
-  -D, --grafana-loki-datasource string              An Grafana Loki Datasource name. e. -d loki  (default "loki")
-  -r, --grafana-mutator-time-range int              Time range in seconds to create grafana URLs. It will use FromDate = 'event.timestamp - time-range' and ToDate = 'event.timestamp + time-range' (default 300)
-  -g, --grafana-url string                          An grafana complete URL. e. https://grafana.com/?orgId=1 
-  -h, --help                                        help for sensu-grafana-mutator
-  -k, --kubernetes-events-integration               Grafana Mutator parser for sensu-kubernetes-events plugin
-  -P, --kubernetes-events-pipeline string           Grafana Loki pipeline to match. e. {app=eventrouter} |= io.kubernetes.event.id (default "io.kubernetes.event.id")
-  -L, --kubernetes-events-stream-label string       Grafana Loki stream label. e. {app=eventrouter} (default "app")
-  -N, --kubernetes-events-stream-namespace string   Grafana Loki stream namespace. e. {app=eventrouter,namespace=io.kubernetes.event.namespace} (default "io.kubernetes.event.namespace")
-  -S, --kubernetes-events-stream-selector string    Grafana Loki stream selector. e. {app=eventrouter} (default "eventrouter")
-  -s, --sensu-label-selector string                 Sensu Label Selector to create Grafana Explore URL using loki as Datasource. {namespace=kubernetes_namespace.value} (default "kubernetes_namespace")
+  -a, --alertmanager-events-integration              Grafana Mutator parser for sensu-alertmanager-events plugin
+  -A, --alertmanager-integration-label string        Label used to identify sensu-alertmanager-events plugin events (default "sensu-alertmanager-events")
+      --always-return-event                          Grafana Mutator will always return an event, even if it has error. All errors will be reported in event.annotations[sensu-grafana-mutator/error]
+      --default-integrations-label-node string       Default node label from Kubernetes Events and Alert Manager integration. (default "node")
+      --default-loki-label-hostname string           Default hostname label for Grafana Loki Stream. {hostname=value} (default "hostname")
+      --default-loki-label-namespace string          Default namespace label for Grafana Loki Stream. {namespace=value} (default "namespace")
+      --extra-loki-labels string                     Extra labels for Grafana Loki Stream. (default "cluster,pod")
+  -d, --grafana-dashboard-suggested string           Suggested Dashboard based on Labels and add it in Grafana URL as &var-label[key]=label[value] (only json format). e. [{"grafana_annotation":"kubernetes_namespace","dashboard_url":"https://grafana.example.com/d/85a562078cdf77779eaa1add43ccec1e/kubernetes-compute-resources-namespace-pods?orgId=1&var-datasource=thanos","labels":["namespace"]}]
+  -e, --grafana-explore-link-enabled                 Enable Grafana Loki Explore Links
+  -D, --grafana-loki-datasource string               An Grafana Loki Datasource name. e. -d loki  (default "loki")
+  -r, --grafana-mutator-time-range int               Time range in seconds to create grafana URLs. It will use FromDate = 'event.timestamp - time-range' and ToDate = 'event.timestamp + time-range' (default 300)
+  -g, --grafana-url string                           An grafana complete URL. e. https://grafana.com/?orgId=1 
+  -h, --help                                         help for sensu-grafana-mutator
+  -k, --kubernetes-events-integration                Grafana Mutator parser for sensu-kubernetes-events plugin
+      --kubernetes-events-integration-label string   Label used to identify sensu-kubernetes-events plugin events (default "sensu-kubernetes-events")
+  -P, --kubernetes-events-pipeline string            Grafana Loki pipeline to match. e. {app=eventrouter} |= io.kubernetes.event.id (default "io.kubernetes.event.id")
+  -L, --kubernetes-events-stream-label string        Grafana Loki stream label. e. {app=eventrouter} (default "app")
+  -N, --kubernetes-events-stream-namespace string    Grafana Loki stream namespace. e. {app=eventrouter,namespace=io.kubernetes.event.namespace} (default "io.kubernetes.event.namespace")
+  -S, --kubernetes-events-stream-selector string     Grafana Loki stream selector. e. {app=eventrouter} (default "eventrouter")
+  -s, --sensu-label-selector string                  Sensu Label Selector to create Grafana Explore URL using loki as Datasource. {namespace=kubernetes_namespace.value} (default "kubernetes_namespace")
 
 Use "sensu-grafana-mutator [command] --help" for more information about a command.
 

@@ -21,16 +21,19 @@ func TestCheckArgs(t *testing.T) {
 }
 
 func TestGrafanaExploreURLEncoded(t *testing.T) {
+	test1map := map[string]string{"app": "eventrouter", "eventID": "test"}
 	test1 := "https://grafana.com/?orgId=1"
 	expected1 := "%22%7Bapp%3D%5C%22eventrouter%5C%22%7D%7C%3D%5C%22test"
-	result1, err1 := grafanaExploreURLEncoded("app", "eventrouter", "test", test1, "", "loki", 1606487400000, 1606487700000)
+	result1, err1 := grafanaExploreURLEncoded(test1map, test1, "loki", 1606487400000, 1606487700000)
 	assert.NoError(t, err1)
 	assert.Contains(t, result1, expected1)
+	test2map := map[string]string{"app": "eventrouter", "eventID": "test"}
 	test2 := "https://grafana.com/"
-	_, err2 := grafanaExploreURLEncoded("app", "eventrouter", "test", test2, "", "loki", 1606487400000, 1606487700000)
+	_, err2 := grafanaExploreURLEncoded(test2map, test2, "loki", 1606487400000, 1606487700000)
 	assert.Error(t, err2)
+	test3map := map[string]string{"namespace": "spacename"}
 	namespace := "spacename"
-	result3, err3 := grafanaExploreURLEncoded("app", "eventrouter", "test", test1, namespace, "loki", 1606487400000, 1606487700000)
+	result3, err3 := grafanaExploreURLEncoded(test3map, test1, "loki", 1606487400000, 1606487700000)
 	assert.NoError(t, err3)
 	assert.Contains(t, result3, namespace)
 }
@@ -120,4 +123,23 @@ func TestMergeStringMaps(t *testing.T) {
 	val4 := map[string]string{"right1": "rightValue1"}
 	res4 := mergeStringMaps(left4, right4)
 	assert.Equal(t, val4, res4)
+}
+
+func TestStringToSliceStrings(t *testing.T) {
+	test1 := "test1"
+	expected1 := []string{"test1"}
+	res1 := stringToSliceStrings(test1)
+	assert.Equal(t, expected1, res1)
+	test2 := "test1,test2"
+	expected2 := []string{"test1", "test2"}
+	res2 := stringToSliceStrings(test2)
+	assert.Equal(t, expected2, res2)
+	test3 := "test1,"
+	expected3 := []string{"test1"}
+	res3 := stringToSliceStrings(test3)
+	assert.Equal(t, expected3, res3)
+	test4 := ""
+	expected4 := []string{}
+	res4 := stringToSliceStrings(test4)
+	assert.Equal(t, expected4, res4)
 }

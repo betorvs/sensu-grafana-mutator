@@ -26,6 +26,7 @@ type Config struct {
 	GrafanaExploreLinkEnabled       bool
 	GrafanaLokiDatasource           string
 	SensuLabelSelector              string
+	KubernetesIntegrationLabel      string
 	KubernetesEventsIntegration     bool
 	KubernetesEventsStreamLabel     string
 	KubernetesEventsStreamSelector  string
@@ -35,6 +36,8 @@ type Config struct {
 	AlertmanagerIntegrationLabel    string
 	DefaultLokiLabelNamespace       string
 	DefaultLokiLabelHostname        string
+	DefaultIntegrationsLabelNode    string
+	ExtraLokiLabels                 string
 	AlwaysReturnEvent               bool
 	GrafanaMutatorTimeRange         int
 	TimeRange                       int64
@@ -141,6 +144,15 @@ var (
 			Value:     &mutatorConfig.AlertmanagerIntegrationLabel,
 		},
 		{
+			Path:      "kubernetes-events-integration-label",
+			Env:       "",
+			Argument:  "kubernetes-events-integration-label",
+			Shorthand: "",
+			Default:   "sensu-kubernetes-events",
+			Usage:     "Label used to identify sensu-kubernetes-events plugin events",
+			Value:     &mutatorConfig.KubernetesIntegrationLabel,
+		},
+		{
 			Path:      "kubernetes-events-stream-label",
 			Env:       "KUBERNETES_EVENTS_STREAM_LABEL",
 			Argument:  "kubernetes-events-stream-label",
@@ -194,6 +206,24 @@ var (
 			Usage:     "Default hostname label for Grafana Loki Stream. {hostname=value}",
 			Value:     &mutatorConfig.DefaultLokiLabelHostname,
 		},
+		{
+			Path:      "default-integrations-label-node",
+			Env:       "DEFAULT_INTEGRATIONS_LABEL_NODE",
+			Argument:  "default-integrations-label-node",
+			Shorthand: "",
+			Default:   "node",
+			Usage:     "Default node label from Kubernetes Events and Alert Manager integration.",
+			Value:     &mutatorConfig.DefaultIntegrationsLabelNode,
+		},
+		{
+			Path:      "extra-loki-labels",
+			Env:       "EXTRA_LOKI_LABELS",
+			Argument:  "extra-loki-labels",
+			Shorthand: "",
+			Default:   "cluster,pod",
+			Usage:     "Extra labels for Grafana Loki Stream.",
+			Value:     &mutatorConfig.ExtraLokiLabels,
+		},
 	}
 )
 
@@ -225,78 +255,37 @@ func executeMutator(event *types.Event) (*types.Event, error) {
 	}
 	// to create grafana_loki_url annotation
 	if mutatorConfig.GrafanaExploreLinkEnabled {
-		sensuLabel, sensuLabelExist := extractLabels(event, mutatorConfig.SensuLabelSelector)
+		labels := labelsToSearch()
+		extractedLabels, othersIntegrationsFound := extractLokiLabels(event, labels)
 		// using sensu-kubernetes-events plugin
-		if mutatorConfig.KubernetesEventsIntegration && !sensuLabelExist {
-			ExplorePipeline, ExploreValid := extractLabels(event, mutatorConfig.KubernetesEventsPipeline)
-			namespace := ""
-			namespaceStream, namespaceValid := extractLabels(event, mutatorConfig.KubernetesEventsStreamNamespace)
-			if namespaceValid {
-				namespace = namespaceStream
-			}
-			if ExploreValid {
-				label := mutatorConfig.KubernetesEventsStreamLabel
-				app := mutatorConfig.KubernetesEventsStreamSelector
-				grafanaURL, err := generateGrafanaURL(label, app, ExplorePipeline, namespace, fromDate, toDate)
-				if err != nil {
-					annotations[errorAnnotationName] = fmt.Sprintf("failed generating grafana URL %v", err)
-					event.Check.Annotations = mergeStringMaps(event.Check.Annotations, annotations)
-					if mutatorConfig.AlwaysReturnEvent {
-						return event, nil
-					}
-					return event, err
+		if mutatorConfig.KubernetesEventsIntegration && othersIntegrationsFound {
+			grafanaURL, err := generateGrafanaURL(extractedLabels, fromDate, toDate)
+			if err != nil {
+				annotations[errorAnnotationName] = fmt.Sprintf("failed generating grafana URL %v", err)
+				event.Check.Annotations = mergeStringMaps(event.Check.Annotations, annotations)
+				if mutatorConfig.AlwaysReturnEvent {
+					return event, nil
 				}
-				annotations["grafana_loki_url"] = grafanaURL
+				return event, err
 			}
+			annotations["grafana_loki_url"] = grafanaURL
 		}
 		// using sensu-alertmanager-events plugin
-		if event.Check.Labels[mutatorConfig.AlertmanagerIntegrationLabel] == "owner" && !sensuLabelExist {
-			app, nameValid := extractLabels(event, mutatorConfig.DefaultLokiLabelNamespace)
-			if nameValid {
-				grafanaURL, err := generateGrafanaURL(mutatorConfig.DefaultLokiLabelNamespace, app, "", "", fromDate, toDate)
-				if err != nil {
-					annotations[errorAnnotationName] = fmt.Sprintf("failed generating grafana URL %v", err)
-					event.Check.Annotations = mergeStringMaps(event.Check.Annotations, annotations)
-					if mutatorConfig.AlwaysReturnEvent {
-						return event, nil
-					}
-					return event, err
+		if mutatorConfig.AlertmanagerEventsIntegration && othersIntegrationsFound {
+			grafanaURL, err := generateGrafanaURL(extractedLabels, fromDate, toDate)
+			if err != nil {
+				annotations[errorAnnotationName] = fmt.Sprintf("failed generating grafana URL %v", err)
+				event.Check.Annotations = mergeStringMaps(event.Check.Annotations, annotations)
+				if mutatorConfig.AlwaysReturnEvent {
+					return event, nil
 				}
-				annotations["grafana_loki_url"] = grafanaURL
+				return event, err
 			}
-			// if doesnt find namespace in labels, use hostname = node
-			// in Loki every node is labeled as hostname
-			// in alert manager/kubernetes the label is node and it used a FQDN
-			// ip-10-192-172-1.eu-west-1.compute.internal
-			if !nameValid {
-				label := mutatorConfig.DefaultLokiLabelHostname
-				app, nameValid := extractLabels(event, "node")
-				if nameValid {
-					// parse FQDN and use short hostname
-					if strings.Contains(app, ".") {
-						newapp := strings.Split(app, ".")
-						app = newapp[0]
-					}
-					grafanaURL, err := generateGrafanaURL(label, app, "", "", fromDate, toDate)
-					if err != nil {
-						annotations[errorAnnotationName] = fmt.Sprintf("failed generating grafana URL %v", err)
-						event.Check.Annotations = mergeStringMaps(event.Check.Annotations, annotations)
-						if mutatorConfig.AlwaysReturnEvent {
-							return event, nil
-						}
-						return event, err
-					}
-					annotations["grafana_loki_url"] = grafanaURL
-				}
-			}
+			annotations["grafana_loki_url"] = grafanaURL
 		}
 		// using sensu label defined in --sensu-label-selector
-		if sensuLabelExist {
-			label := mutatorConfig.DefaultLokiLabelNamespace
-			if mutatorConfig.SensuLabelSelector != "kubernetes_namespace" {
-				label = mutatorConfig.SensuLabelSelector
-			}
-			grafanaURL, err := generateGrafanaURL(label, sensuLabel, "", "", fromDate, toDate)
+		if !othersIntegrationsFound {
+			grafanaURL, err := generateGrafanaURL(extractedLabels, fromDate, toDate)
 			if err != nil {
 				annotations[errorAnnotationName] = fmt.Sprintf("failed generating grafana URL %v", err)
 				event.Check.Annotations = mergeStringMaps(event.Check.Annotations, annotations)
@@ -341,34 +330,23 @@ func executeMutator(event *types.Event) (*types.Event, error) {
 				return event, fmt.Errorf("Missing orgId in grafana URL in --grafana-dashboard-suggested. e. https://grafana.com/?orgId=1")
 			}
 			timeRange := fmt.Sprintf("&from=%d&to=%d", fromDate, toDate)
-			// finalURI := ""
-			// validFinalURI := false
-			// count := 0
 			if v.MatchLabels != nil {
 				if searchMatchLabels(event, v.MatchLabels) {
 					if v.Labels != nil {
-						// fmt.Println("both")
 						// case match matchLabels and found labels
 						finalURI, validFinalURI := generateURIBySlice(event, v.Labels)
-						// fmt.Println(finalURI)
 						if validFinalURI {
-							// output += "_lm"
 							annotations[output] = fmt.Sprintf("%s%s%s", grafanaURL, timeRange, finalURI)
 						}
 					} else {
-						// fmt.Println("only match")
 						// only match labels is used, no labels provided
-						// output += "__m"
 						annotations[output] = fmt.Sprintf("%s%s", grafanaURL, timeRange)
 					}
 				}
 
 			} else {
-				// fmt.Println("only labels")
 				finalURI, validFinalURI := generateURIBySlice(event, v.Labels)
-				// fmt.Println(finalURI)
 				if validFinalURI {
-					// output += "_l_"
 					annotations[output] = fmt.Sprintf("%s%s%s", grafanaURL, timeRange, finalURI)
 				}
 			}
@@ -382,10 +360,10 @@ func executeMutator(event *types.Event) (*types.Event, error) {
 	return event, nil
 }
 
-func generateGrafanaURL(l, a, v, n string, fromDate, toDate int64) (string, error) {
-	grafanaURL, err := grafanaExploreURLEncoded(l, a, v, mutatorConfig.GrafanaURL, n, mutatorConfig.GrafanaLokiDatasource, fromDate, toDate)
+func generateGrafanaURL(l map[string]string, fromDate, toDate int64) (string, error) {
+	grafanaURL, err := grafanaExploreURLEncoded(l, mutatorConfig.GrafanaURL, mutatorConfig.GrafanaLokiDatasource, fromDate, toDate)
 	if err != nil {
-		return "", fmt.Errorf("Cannot generate grafana loki Explore URL")
+		return "", err
 	}
 	return grafanaURL, nil
 }
@@ -401,37 +379,49 @@ func replaceSpecial(s string) string {
 	value = strings.ReplaceAll(value, "{", "%7B")
 	// } %7D
 	value = strings.ReplaceAll(value, "}", "%7D")
-	// | %7C
-	// value = strings.ReplaceAll(value, "|", "%7C")
-	// = %3D
-	// value = strings.ReplaceAll(value, "=", "%3D")
-	// space +
-	// value = strings.ReplaceAll(value, " ", "+")
 	return value
 }
 
-func grafanaExploreURLEncoded(label, app, value, grafana, namespace, datasource string, fromDate, toDate int64) (string, error) {
+func grafanaExploreURLEncoded(labels map[string]string, grafana, datasource string, fromDate, toDate int64) (string, error) {
 	// grafana URL expected: https://grafana.com/?orgId=1
 	grafanaURL, err := url.Parse(grafana)
 	if err != nil {
 		return "", err
 	}
-	// if grafana URL not contain "?orgId=1" return a error
+	// if grafana URL not contain "?orgId=1" return a error in the end of this func
+	var errOrgID error
 	if !checkMissingOrgID(grafanaURL.Query()) {
-		return "", fmt.Errorf("Missing orgId in grafana URL. e. https://grafana.com/?orgId=1")
+		errOrgID = fmt.Errorf("Missing orgId in grafana URL. e. https://grafana.com/?orgId=1")
 	}
 	grafanaURL.Path = "explore"
 	grafanaExploreURL := fmt.Sprintf("%s&left=", grafanaURL)
-	searchText := url.QueryEscape(fmt.Sprintf("{%s=\\\"%s\\\"}|=\\\"%s\\\"", label, app, value))
-	if namespace != "" {
-		searchText = url.QueryEscape(fmt.Sprintf("{%s=\\\"%s\\\",namespace=\\\"%s\\\"}|=\\\"%s\\\"", label, app, namespace, value))
+	var labelsSearchText, startSearchText, endSearchText string
+	var eventID bool
+	count := 0
+	for key, value := range labels {
+		if key != "" && value != "" && key != "eventID" {
+			if count == 0 {
+				labelsSearchText += fmt.Sprintf("%s=\\\"%s\\\"", key, value)
+				count++
+			} else {
+				labelsSearchText += fmt.Sprintf(",%s=\\\"%s\\\"", key, value)
+				count++
+			}
+		}
+		if key == "eventID" && value != "" {
+			endSearchText = fmt.Sprintf("|=\\\"%s\\\"", value)
+			eventID = true
+			count++
+		}
 	}
-	if value == "" && namespace == "" {
-		searchText = url.QueryEscape(fmt.Sprintf("{%s=\\\"%s\\\"}", label, app))
+	startSearchText = fmt.Sprintf("{%s}", labelsSearchText)
+	searchText := url.QueryEscape(startSearchText)
+	if eventID {
+		searchText = url.QueryEscape(fmt.Sprintf("%s%s", startSearchText, endSearchText))
 	}
 	grafanaExploreURI := fmt.Sprintf("[\"%d\",\"%d\",\"%s\",{\"expr\":\"%s\"}]", fromDate, toDate, datasource, searchText)
 	result := fmt.Sprintf("%s%s", grafanaExploreURL, replaceSpecial(grafanaExploreURI))
-	return result, nil
+	return result, errOrgID
 }
 
 func checkMissingOrgID(u url.Values) bool {
@@ -472,6 +462,89 @@ func extractLabels(event *types.Event, label string) (string, bool) {
 	return labelFound, true
 }
 
+func labelsToSearch() []string {
+	labels := stringToSliceStrings(mutatorConfig.ExtraLokiLabels)
+	if mutatorConfig.KubernetesEventsIntegration {
+		labels = append(labels, mutatorConfig.KubernetesEventsStreamNamespace)
+		labels = append(labels, mutatorConfig.KubernetesEventsPipeline)
+	}
+	labels = append(labels, mutatorConfig.DefaultLokiLabelNamespace)
+	if mutatorConfig.SensuLabelSelector != mutatorConfig.DefaultLokiLabelNamespace {
+		labels = append(labels, mutatorConfig.SensuLabelSelector)
+	}
+	if mutatorConfig.AlertmanagerEventsIntegration {
+		labels = append(labels, mutatorConfig.DefaultIntegrationsLabelNode)
+	}
+	return labels
+}
+
+func renameKey(s string) string {
+	switch {
+	case s == mutatorConfig.KubernetesEventsStreamNamespace:
+		return mutatorConfig.DefaultLokiLabelNamespace
+	case s == mutatorConfig.KubernetesEventsPipeline:
+		return "eventID"
+	case s == mutatorConfig.SensuLabelSelector:
+		return mutatorConfig.DefaultLokiLabelNamespace
+	case s == mutatorConfig.DefaultIntegrationsLabelNode:
+		return mutatorConfig.DefaultLokiLabelHostname
+	default:
+		return s
+	}
+}
+
+func extractLokiLabels(event *types.Event, labels []string) (map[string]string, bool) {
+	labelsFound := make(map[string]string)
+	var othersIntegrationsFound bool
+	for _, l := range labels {
+		// [mutatorConfig.KubernetesIntegrationLabel] == "owner"
+		if event.Labels != nil {
+			for k, v := range event.Labels {
+				if k == l {
+					key := renameKey(k)
+					labelsFound[key] = v
+				}
+				if k == mutatorConfig.KubernetesIntegrationLabel && v == "owner" {
+					othersIntegrationsFound = true
+					labelsFound[mutatorConfig.KubernetesEventsStreamLabel] = mutatorConfig.KubernetesEventsStreamSelector
+				}
+			}
+		}
+		if event.Entity.Labels != nil {
+			for k, v := range event.Entity.Labels {
+				if k == l {
+					key := renameKey(k)
+					labelsFound[key] = v
+				}
+			}
+		}
+		// [mutatorConfig.AlertmanagerIntegrationLabel] == "owner"
+		if event.Check.Labels != nil {
+			for k, v := range event.Check.Labels {
+				if k == l {
+					key := renameKey(k)
+					value := v
+					if k == mutatorConfig.DefaultIntegrationsLabelNode {
+						// if doesnt find namespace in labels, use hostname = node
+						// in Loki every node is labeled as hostname
+						// in alert manager/kubernetes the label is node and it used a FQDN
+						// example: ip-10-192-172-1.eu-west-1.compute.internal
+						if strings.Contains(value, ".") {
+							newapp := strings.Split(value, ".")
+							value = newapp[0]
+						}
+					}
+					labelsFound[key] = value
+				}
+				if k == mutatorConfig.AlertmanagerIntegrationLabel && v == "owner" {
+					othersIntegrationsFound = true
+				}
+			}
+		}
+	}
+	return labelsFound, othersIntegrationsFound
+}
+
 func generateURIBySlice(event *types.Event, v []string) (string, bool) {
 	count := 0
 	finalURI := ""
@@ -483,7 +556,6 @@ func generateURIBySlice(event *types.Event, v []string) (string, bool) {
 			count++
 		}
 	}
-	// fmt.Println(finalURI, count)
 	if len(v) == count {
 		return finalURI, true
 	}
@@ -533,4 +605,21 @@ func mergeStringMaps(left, right map[string]string) map[string]string {
 		}
 	}
 	return left
+}
+
+func stringToSliceStrings(s string) []string {
+	slice := []string{}
+	if s != "" {
+		if strings.Contains(s, ",") {
+			splited := strings.Split(s, ",")
+			for _, v := range splited {
+				if v != "" {
+					slice = append(slice, v)
+				}
+			}
+		} else {
+			slice = []string{s}
+		}
+	}
+	return slice
 }
