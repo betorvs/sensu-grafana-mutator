@@ -258,7 +258,7 @@ func executeMutator(event *types.Event) (*types.Event, error) {
 		labels := labelsToSearch()
 		extractedLabels, othersIntegrationsFound := extractLokiLabels(event, labels)
 		// using sensu-kubernetes-events plugin
-		if mutatorConfig.KubernetesEventsIntegration && othersIntegrationsFound {
+		if mutatorConfig.KubernetesEventsIntegration && othersIntegrationsFound == mutatorConfig.KubernetesIntegrationLabel {
 			grafanaURL, err := generateGrafanaURL(extractedLabels, fromDate, toDate)
 			if err != nil {
 				annotations[errorAnnotationName] = fmt.Sprintf("failed generating grafana URL %v", err)
@@ -271,7 +271,7 @@ func executeMutator(event *types.Event) (*types.Event, error) {
 			annotations["grafana_loki_url"] = grafanaURL
 		}
 		// using sensu-alertmanager-events plugin
-		if mutatorConfig.AlertmanagerEventsIntegration && othersIntegrationsFound {
+		if mutatorConfig.AlertmanagerEventsIntegration && othersIntegrationsFound == mutatorConfig.AlertmanagerIntegrationLabel {
 			grafanaURL, err := generateGrafanaURL(extractedLabels, fromDate, toDate)
 			if err != nil {
 				annotations[errorAnnotationName] = fmt.Sprintf("failed generating grafana URL %v", err)
@@ -284,7 +284,7 @@ func executeMutator(event *types.Event) (*types.Event, error) {
 			annotations["grafana_loki_url"] = grafanaURL
 		}
 		// using sensu label defined in --sensu-label-selector
-		if !othersIntegrationsFound {
+		if othersIntegrationsFound == "none" {
 			grafanaURL, err := generateGrafanaURL(extractedLabels, fromDate, toDate)
 			if err != nil {
 				annotations[errorAnnotationName] = fmt.Sprintf("failed generating grafana URL %v", err)
@@ -493,9 +493,10 @@ func renameKey(s string) string {
 	}
 }
 
-func extractLokiLabels(event *types.Event, labels []string) (map[string]string, bool) {
+func extractLokiLabels(event *types.Event, labels []string) (map[string]string, string) {
 	labelsFound := make(map[string]string)
-	var othersIntegrationsFound bool
+	othersIntegrationsFound := "none"
+	var hostnameFound bool
 	for _, l := range labels {
 		// [mutatorConfig.KubernetesIntegrationLabel] == "owner"
 		if event.Labels != nil {
@@ -503,10 +504,6 @@ func extractLokiLabels(event *types.Event, labels []string) (map[string]string, 
 				if k == l {
 					key := renameKey(k)
 					labelsFound[key] = v
-				}
-				if k == mutatorConfig.KubernetesIntegrationLabel && v == "owner" {
-					othersIntegrationsFound = true
-					labelsFound[mutatorConfig.KubernetesEventsStreamLabel] = mutatorConfig.KubernetesEventsStreamSelector
 				}
 			}
 		}
@@ -532,15 +529,26 @@ func extractLokiLabels(event *types.Event, labels []string) (map[string]string, 
 						if strings.Contains(value, ".") {
 							newapp := strings.Split(value, ".")
 							value = newapp[0]
+							hostnameFound = true
 						}
 					}
 					labelsFound[key] = value
 				}
 				if k == mutatorConfig.AlertmanagerIntegrationLabel && v == "owner" {
-					othersIntegrationsFound = true
+					othersIntegrationsFound = mutatorConfig.AlertmanagerIntegrationLabel
 				}
 			}
 		}
+	}
+	if hostnameFound && event.Check.Labels[mutatorConfig.AlertmanagerIntegrationLabel] == "owner" {
+		onlyHostnameLabel := make(map[string]string)
+		onlyHostnameLabel[mutatorConfig.DefaultLokiLabelHostname] = labelsFound[mutatorConfig.DefaultLokiLabelHostname]
+		return onlyHostnameLabel, mutatorConfig.AlertmanagerIntegrationLabel
+	}
+	if event.Labels[mutatorConfig.KubernetesIntegrationLabel] == "owner" {
+		k8sEventsLabel := map[string]string{mutatorConfig.KubernetesEventsStreamLabel: mutatorConfig.KubernetesEventsStreamSelector}
+		k8sEventsLabel["eventID"] = labelsFound["eventID"]
+		return k8sEventsLabel, mutatorConfig.KubernetesIntegrationLabel
 	}
 	return labelsFound, othersIntegrationsFound
 }
