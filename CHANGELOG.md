@@ -7,7 +7,7 @@ Versioning](http://semver.org/spec/v2.0.0.html).
 
 ## Unreleased
 
-## [0.0.2] - 
+## [0.0.2] - 2021-04-29
 
 ### Added
 - Add `--always-return-event` flag to return sensu event with a annotation with this error. To avoid missing any event you should use this flag.

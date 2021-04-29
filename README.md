@@ -225,12 +225,30 @@ metadata:
   name: sensu-grafana-mutator
   namespace: default
 spec:
-  command: >-
-    sensu-grafana-mutator -g https://grafana.example.com/?orgId=1 -e -k -a
-    -d "[{\"grafana_annotation\":\"kubernetes_namespace\",\"dashboard_url\":\"https://grafana.example.com/d/85a562078cdf77779eaa1add43ccec1e/kubernetes-compute-resources-namespace-pods?orgId=1&var-datasource=thanos\",\"labels\":[\"namespace\",\"cluster\"]},{\"grafana_annotation\":\"kubernetes_nodes\",\"dashboard_url\":\"https://grafana.example.com/d/200ac8fdbfbb74b39aff88118e4d1c2c/kubernetes-compute-resources-node-pods?orgId=1&var-datasource=thanos\",\"labels\":[\"node\",\"cluster\"]}]"
+  command: |-
+    sensu-grafana-mutator -g https://grafana.example.com/?orgId=1 -e -k -a -d '[
+      {
+        "grafana_annotation": "kubernetes_namespace",
+        "dashboard_url": "https://grafana.example.com/d/85a562078cdf77779eaa1add43ccec1e/kubernetes-compute-resources-namespace-pods?orgId=1&var-datasource=thanos",
+        "labels": [
+          "namespace",
+          "cluster"
+        ]
+      },
+      {
+        "grafana_annotation": "kubernetes_nodes",
+        "dashboard_url": "https://grafana.example.com/d/200ac8fdbfbb74b39aff88118e4d1c2c/kubernetes-compute-resources-node-pods?orgId=1&var-datasource=thanos",
+        "labels": [
+          "node",
+          "cluster"
+        ]
+      }
+    ]'
   runtime_assets:
   - betorvs/sensu-grafana-mutator
 ```
+
+To avoid losing events because a wrong configuration we recommend to test any target events download them from Sensu and do simple `cat event.json | sensu-grafana-mutator ...`. But if you are not 100% confident, use `--always-return-event` to avoid missing events. 
 
 
 ## Installation from source
