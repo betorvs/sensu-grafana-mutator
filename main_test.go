@@ -23,7 +23,7 @@ func TestCheckArgs(t *testing.T) {
 func TestGrafanaExploreURLEncoded(t *testing.T) {
 	test1map := map[string]string{"app": "eventrouter", "eventID": "test"}
 	test1 := "https://grafana.com/?orgId=1"
-	expected1 := "%22%7Bapp%3D%5C%22eventrouter%5C%22%7D%7C%3D%5C%22test"
+	expected1 := "app%3D%5C%22eventrouter%5C%22%7D%7C%3D%5C%22test"
 	result1, err1 := grafanaExploreURLEncoded(test1map, test1, "loki", 1606487400000, 1606487700000)
 	assert.NoError(t, err1)
 	assert.Contains(t, result1, expected1)
